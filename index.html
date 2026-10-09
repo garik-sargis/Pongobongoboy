@@ -2,512 +2,222 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<meta name="theme-color" content="#0b1a33">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<title>Pongobongoboy</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=IBM+Plex+Mono:wght@400;600&display=swap">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Train Prototype</title>
 <style>
-  /* Layout: one full-screen table-tennis court, portrait; you defend the bottom edge, the AI the top. */
   :root {
-    --night: #081428;     /* page ground */
-    --table: #0f2a52;     /* court surface */
-    --chalk: #e9eef7;     /* court lines, text */
-    --chalk-dim: #8ea3c4; /* secondary text */
-    --you: #f4e7cf;       /* player paddle */
-    --bot: #6fb0ff;       /* AI paddle */
-    --ball: #ff8a3d;      /* ball, primary action */
-    --font-display: "Bungee", "Arial Black", Impact, sans-serif;
-    --font-ui: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    --bg: #171712;
+    --panel: #22221c;
+    --panel-2: #2c2c25;
+    --line: #3d3c33;
+    --text: #e9e4d6;
+    --dim: #a19c8c;
+    --fuel: #f0a531;
+    --scrap: #9aa3ab;
+    --engine: #e2b84b;
+    --good: #6fd16f;
+    --warn: #e6c84a;
+    --bad: #e45a4a;
+    --select: #ffe066;
+    --crew: #3fb6a8;
+    --font: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
     color-scheme: dark;
   }
+  * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
-  [hidden] { display: none !important; }
   body {
-    background: var(--night);
-    color: var(--chalk);
-    font-family: var(--font-ui);
-    overflow: hidden;
-    overscroll-behavior: none;
-    -webkit-user-select: none;
-    user-select: none;
-    -webkit-tap-highlight-color: transparent;
-  }
-  .stage {
-    position: relative;
-    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font: 13px/1.35 var(--font);
     display: grid;
-    place-items: center;
-    padding: 12px 16px;
-    box-sizing: border-box;
-  }
-  .court {
-    position: relative;
-    width: 270px;  /* real size is set from the stage in resize() */
-    height: 480px;
-    border-radius: 6px;
-    box-shadow: 0 0 0 2px #1d3c6b, 0 24px 60px rgba(0, 0, 0, .55);
+    grid-template-rows: auto 1fr auto;
     overflow: hidden;
-    touch-action: none;
+    user-select: none;
   }
-  canvas { display: block; width: 100%; height: 100%; touch-action: none; }
-
-  .pause-btn {
-    position: absolute;
-    top: 50%;
-    right: 10px;
-    transform: translateY(-50%);
-    width: 40px; height: 40px;
-    border-radius: 50%;
-    border: 2px solid var(--chalk-dim);
-    background: rgba(8, 20, 40, .6);
-    color: var(--chalk);
-    font: 600 14px/1 var(--font-ui);
+  [hidden] { display: none !important; }
+  button {
+    font: inherit;
+    color: var(--text);
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 6px 10px;
     cursor: pointer;
   }
-  .pause-btn:focus-visible, .btn:focus-visible { outline: 3px solid var(--ball); outline-offset: 2px; }
+  button:hover:not(:disabled) { border-color: var(--dim); }
+  button:disabled { opacity: 0.45; cursor: default; }
+  kbd {
+    font: 11px var(--font);
+    border: 1px solid var(--line);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 0 4px;
+    color: var(--dim);
+  }
 
-  .overlay {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 18px;
-    padding: 24px 16px;
-    text-align: center;
-    background: rgba(8, 20, 40, .82);
-    backdrop-filter: blur(3px);
+  /* --- Top bar: resources --- */
+  #top { background: var(--panel); border-bottom: 1px solid var(--line); padding: 8px 12px 6px; }
+  .stats { display: flex; gap: 22px; align-items: flex-end; flex-wrap: wrap; }
+  .stat { display: flex; flex-direction: column; gap: 3px; min-width: 90px; }
+  .stat .label { color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
+  .stat .value { font-size: 15px; font-weight: 600; }
+  .stat .sub { color: var(--dim); font-size: 11px; }
+  .meter { width: 160px; height: 10px; background: #0007; border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
+  .meter > i { display: block; height: 100%; width: 0; transition: width 0.15s linear; }
+  #fuel-bar { background: var(--fuel); }
+  #engine-bar { background: var(--engine); }
+  #threat-bar { background: var(--good); }
+  .stat.threat .meter { width: 200px; }
+  #minimap { display: block; width: 100%; height: 26px; margin-top: 6px; cursor: pointer; }
+
+  /* --- Play field --- */
+  #field { position: relative; min-height: 0; }
+  #game { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; }
+  #warnings { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; pointer-events: none; }
+  .warning { background: #000b; border: 1px solid var(--bad); color: #ffd2cc; padding: 4px 10px; border-radius: 5px; font-weight: 600; white-space: nowrap; }
+  .warning.caution { border-color: var(--warn); color: #fff0c0; }
+  #messages { position: absolute; top: 42px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 4px; pointer-events: none; }
+  .message { background: #000a; padding: 3px 10px; border-radius: 4px; }
+  .message.bad { color: #ffb4aa; }
+  .message.good { color: #b8f0b8; }
+  #paused { position: absolute; bottom: 10px; right: 12px; color: var(--warn); font-weight: 600; pointer-events: none; }
+
+  /* --- Bottom bar: controls --- */
+  #bottom { background: var(--panel); border-top: 1px solid var(--line); padding: 8px 12px; display: flex; gap: 14px; align-items: stretch; }
+  #go {
+    min-width: 150px; font-size: 16px; font-weight: 700; letter-spacing: 0.04em;
+    background: #2f4a2a; border-color: #4d7a45;
   }
-  .overlay h1 {
-    margin: 0;
-    font: 400 clamp(26px, 8vmin, 44px)/1 var(--font-display);
-    letter-spacing: .02em;
-    color: var(--chalk);
-    text-wrap: balance;
-  }
-  .overlay h1 .o { color: var(--ball); }
-  .overlay p { margin: 0; max-width: 30ch; color: var(--chalk-dim); font-size: 14px; line-height: 1.5; }
-  .overlay .result { font: 400 clamp(20px, 6vmin, 30px)/1.1 var(--font-display); color: var(--chalk); }
-  .overlay .final { font: 600 18px/1 var(--font-ui); color: var(--chalk-dim); font-variant-numeric: tabular-nums; }
-  .label { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--chalk-dim); }
-  .levels { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
-  .btn {
-    font: 600 14px/1 var(--font-ui);
-    padding: 12px 16px;
-    min-width: 84px;
-    border-radius: 999px;
-    border: 2px solid var(--chalk-dim);
-    background: transparent;
-    color: var(--chalk);
-    cursor: pointer;
-  }
-  .btn[aria-pressed="true"] { border-color: var(--bot); background: rgba(111, 176, 255, .16); }
-  .btn.primary {
-    background: var(--ball);
-    border-color: var(--ball);
-    color: #1b0c02;
-    font-family: var(--font-display);
-    font-weight: 400;
-    font-size: 18px;
-    padding: 14px 28px;
-  }
-  .hint { font-size: 12px; color: var(--chalk-dim); }
-  @media (prefers-reduced-motion: reduce) { .overlay { backdrop-filter: none; } }
+  #go.stop { background: #5a2a24; border-color: #8a4238; }
+  #crew-cards { display: flex; gap: 8px; }
+  .crew-card { width: 150px; text-align: left; display: flex; flex-direction: column; gap: 3px; }
+  .crew-card.selected { border-color: var(--select); box-shadow: 0 0 0 1px var(--select) inset; }
+  .crew-card.dead { opacity: 0.4; text-decoration: line-through; }
+  .crew-card .row { display: flex; justify-content: space-between; }
+  .crew-card .status { color: var(--dim); font-size: 11px; }
+  .crew-card .meter { width: 100%; height: 6px; }
+  .crew-card .meter > i { background: var(--crew); }
+  #info { flex: 1; background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; display: flex; gap: 12px; align-items: center; min-width: 0; }
+  #info .text { flex: 1; min-width: 0; }
+  #info .title { font-weight: 600; }
+  #info .desc { color: var(--dim); font-size: 12px; }
+  .side-buttons { display: flex; flex-direction: column; gap: 6px; }
+
+  /* --- Overlays --- */
+  .overlay { position: fixed; inset: 0; background: #000c; display: flex; align-items: center; justify-content: center; z-index: 10; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 22px 26px; max-width: 640px; width: calc(100% - 32px); }
+  .card h1 { margin: 0 0 6px; font-size: 22px; }
+  .card h2 { margin: 16px 0 6px; font-size: 14px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.06em; }
+  .card p { margin: 6px 0; }
+  .card ul { margin: 4px 0; padding-left: 18px; }
+  .card li { margin: 2px 0; }
+  .card .actions { margin-top: 16px; display: flex; gap: 8px; }
+  .card .primary { background: #2f4a2a; border-color: #4d7a45; font-weight: 700; padding: 8px 16px; }
+  .legend { display: inline-block; width: 10px; height: 10px; margin-right: 4px; vertical-align: -1px; }
+  #end-title.win { color: var(--good); }
+  #end-title.loss { color: var(--bad); }
+  .stats-line { color: var(--dim); }
 </style>
 </head>
 <body>
-<main class="stage">
-  <div class="court" id="court">
-    <canvas id="game" aria-label="Pong court"></canvas>
-    <button class="pause-btn" id="pauseBtn" aria-label="Pause" hidden>II</button>
-
-    <section class="overlay" id="menu">
-      <h1>P<span class="o">o</span>ng<span class="o">o</span>bong<span class="o">o</span>boy</h1>
-      <p>Drag anywhere on the court to move your paddle. First to 7 points wins.</p>
-      <div class="label">AI opponent</div>
-      <div class="levels" role="group" aria-label="AI difficulty">
-        <button class="btn" id="lvl-easy" data-level="easy" aria-pressed="false">Easy</button>
-        <button class="btn" id="lvl-normal" data-level="normal" aria-pressed="true">Normal</button>
-        <button class="btn" id="lvl-hard" data-level="hard" aria-pressed="false">Hard</button>
+  <header id="top">
+    <div class="stats">
+      <div class="stat">
+        <span class="label">Fuel</span>
+        <div class="meter"><i id="fuel-bar"></i></div>
+        <span class="sub" id="fuel-text"></span>
       </div>
-      <button class="btn primary" id="startBtn">Serve</button>
-      <div class="hint">Keyboard: ← → or A / D, P to pause</div>
-    </section>
+      <div class="stat">
+        <span class="label">Burn</span>
+        <span class="value" id="burn-text"></span>
+        <span class="sub" id="burn-sub"></span>
+      </div>
+      <div class="stat">
+        <span class="label">Engine</span>
+        <div class="meter"><i id="engine-bar"></i></div>
+        <span class="sub" id="engine-text"></span>
+      </div>
+      <div class="stat">
+        <span class="label">Scrap</span>
+        <span class="value" id="scrap-text"></span>
+      </div>
+      <div class="stat">
+        <span class="label">Crew</span>
+        <span class="value" id="crew-text"></span>
+        <span class="sub" id="crew-sub"></span>
+      </div>
+      <div class="stat">
+        <span class="label">To exit</span>
+        <span class="value" id="exit-text"></span>
+      </div>
+      <div class="stat threat">
+        <span class="label">Threat</span>
+        <div class="meter"><i id="threat-bar"></i></div>
+        <span class="sub" id="threat-text"></span>
+      </div>
+    </div>
+    <canvas id="minimap" title="Route overview — click to look there"></canvas>
+  </header>
 
-    <section class="overlay" id="pauseMenu" hidden>
-      <div class="result">Paused</div>
-      <button class="btn primary" id="resumeBtn">Resume</button>
-      <button class="btn" id="quitBtn">Quit to menu</button>
-    </section>
+  <main id="field">
+    <canvas id="game"></canvas>
+    <div id="warnings"></div>
+    <div id="messages"></div>
+    <div id="paused" hidden>PAUSED (P)</div>
+  </main>
 
-    <section class="overlay" id="overMenu" hidden>
-      <div class="result" id="resultText">You win</div>
-      <div class="final" id="finalScore">7 – 4</div>
-      <button class="btn primary" id="againBtn">Play again</button>
-      <button class="btn" id="menuBtn">Change difficulty</button>
-    </section>
+  <footer id="bottom">
+    <button id="go" title="Start / stop the train (Space)">GO <kbd>Space</kbd></button>
+    <div id="crew-cards"></div>
+    <div class="side-buttons">
+      <button id="recall" title="All crew outside walk back to the train (R)">Recall all <kbd>R</kbd></button>
+      <button id="help-btn">Help <kbd>H</kbd></button>
+    </div>
+    <div id="info">
+      <div class="text">
+        <div class="title" id="info-title"></div>
+        <div class="desc" id="info-desc"></div>
+      </div>
+      <button id="repair" hidden></button>
+    </div>
+  </footer>
+
+  <div class="overlay" id="help">
+    <div class="card">
+      <h1>Train prototype</h1>
+      <p>Get the train to the <b>EXIT</b> tunnel on the right. You lose if the <b>locomotive</b> is destroyed or <b>every crew member</b> dies.</p>
+      <p>Fuel runs out while you drive, so you will have to stop. While stopped, the <b>threat</b> meter climbs and attacks get heavier. Moving lets it fall again.</p>
+      <h2>Controls</h2>
+      <ul>
+        <li><kbd>Space</kbd> or the GO button: start / stop the train</li>
+        <li><b>Click a crew member</b> (or <kbd>1</kbd> <kbd>2</kbd>, crew cards) to select. <kbd>Shift</kbd> adds to selection.</li>
+        <li>With crew selected, <b>click</b> (left or right) the ground to move, a <span class="legend" style="background:var(--fuel)"></span>fuel or <span class="legend" style="background:var(--scrap)"></span>scrap deposit to gather, or the train to board.</li>
+        <li>Crew can only leave the train while it is stopped. If you drive off, anyone outside is left behind.</li>
+        <li><kbd>R</kbd> recall all crew &nbsp; <kbd>Esc</kbd> deselect</li>
+        <li><b>Click a car</b> (with no crew selected) to inspect it and repair it with scrap while stopped.</li>
+        <li><kbd>A</kbd>/<kbd>D</kbd> or arrows / mouse wheel: look ahead or behind. <kbd>F</kbd> follow train. Click the route bar to jump.</li>
+        <li><kbd>P</kbd> pause &nbsp; <kbd>H</kbd> this help</li>
+      </ul>
+      <h2>Enemies</h2>
+      <ul>
+        <li><span class="legend" style="background:#cf4545"></span><b>Shooter</b>: approaches and fires at the nearest crew member or car.</li>
+        <li><span class="legend" style="background:#ff3df0"></span><b>Rusher</b> (pulsing, “!”): fast, explodes on contact. Turrets and crew target these first.</li>
+      </ul>
+      <h2>Debug</h2>
+      <p class="stats-line"><kbd>G</kbd> +fuel &nbsp; <kbd>K</kbd> damage engine &nbsp; <kbd>N</kbd> toggle spawns &nbsp; <kbd>T</kbd> 2× speed</p>
+      <div class="actions"><button class="primary" id="help-close">Play</button></div>
+    </div>
   </div>
-</main>
 
-<script>
-(() => {
-  // Logical court size; everything is drawn in these units and scaled to the screen.
-  const W = 360, H = 640;
-  const WIN_SCORE = 7;
-  const PADDLE_W = 72, PADDLE_H = 12, PADDLE_GAP = 34;
-  const BALL_R = 7;
-  const BALL_START = 330, BALL_STEP = 20, BALL_MAX = 760;
-  const MAX_BOUNCE = Math.PI / 3; // 60° off vertical at the paddle edge
+  <div class="overlay" id="end" hidden>
+    <div class="card">
+      <h1 id="end-title"></h1>
+      <p id="end-reason"></p>
+      <p class="stats-line" id="end-stats"></p>
+      <div class="actions"><button class="primary" id="restart">Play again</button></div>
+    </div>
+  </div>
 
-  // AI tuning: top speed (px/s), how often it re-reads the ball (s), aim error (px),
-  // and whether it predicts wall bounces or just chases the ball.
-  const LEVELS = {
-    easy:   { speed: 230, reaction: 0.20, error: 34, predict: false },
-    normal: { speed: 340, reaction: 0.11, error: 20, predict: true },
-    hard:   { speed: 500, reaction: 0.05, error: 8,  predict: true },
-  };
-
-  const canvas = document.getElementById('game');
-  const ctx = canvas.getContext('2d');
-  const court = document.getElementById('court');
-  const $ = id => document.getElementById(id);
-  const menu = $('menu'), pauseMenu = $('pauseMenu'), overMenu = $('overMenu'), pauseBtn = $('pauseBtn');
-
-  let level = 'normal';
-  try { const saved = localStorage.getItem('pong-level'); if (LEVELS[saved]) level = saved; } catch (e) {}
-
-  const player = { x: W / 2 - PADDLE_W / 2, y: H - PADDLE_GAP - PADDLE_H, target: null, keyDir: 0 };
-  const ai = { x: W / 2 - PADDLE_W / 2, y: PADDLE_GAP, target: W / 2, think: 0 };
-  const ball = { x: W / 2, y: H / 2, vx: 0, vy: 0, speed: BALL_START, trail: [] };
-  const score = { you: 0, ai: 0 };
-  let state = 'menu'; // menu | serving | playing | paused | over
-  let serveTimer = 0, serveDir = 1, flash = 0, flashWho = '';
-
-  // ---------- sizing ----------
-  let scale = 1;
-  const stage = court.parentElement;
-  function resize() {
-    // Fit the 9:16 court inside the stage's content box.
-    const cs = getComputedStyle(stage);
-    const availW = stage.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
-    const availH = stage.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
-    const w = Math.floor(Math.min(availW, availH * W / H));
-    court.style.width = w + 'px';
-    court.style.height = Math.floor(w * H / W) + 'px';
-    const rect = court.getBoundingClientRect();
-    const dpr = Math.min(window.devicePixelRatio || 1, 3);
-    canvas.width = Math.round(rect.width * dpr);
-    canvas.height = Math.round(rect.height * dpr);
-    scale = canvas.width / W;
-    draw();
-  }
-  window.addEventListener('resize', resize);
-  if (window.ResizeObserver) new ResizeObserver(resize).observe(stage);
-
-  // ---------- sound ----------
-  let audio = null;
-  function beep(freq, dur = 0.06, type = 'square', vol = 0.06) {
-    if (!audio) return;
-    const o = audio.createOscillator(), g = audio.createGain();
-    o.type = type; o.frequency.value = freq;
-    g.gain.setValueAtTime(vol, audio.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + dur);
-    o.connect(g).connect(audio.destination);
-    o.start(); o.stop(audio.currentTime + dur);
-  }
-  function unlockAudio() {
-    try {
-      if (!audio) audio = new (window.AudioContext || window.webkitAudioContext)();
-      if (audio.state === 'suspended') audio.resume();
-    } catch (e) { audio = null; }
-  }
-
-  // ---------- input ----------
-  function toCourtX(clientX) {
-    const rect = canvas.getBoundingClientRect();
-    return (clientX - rect.left) / rect.width * W;
-  }
-  canvas.addEventListener('pointerdown', e => {
-    canvas.setPointerCapture?.(e.pointerId);
-    player.target = toCourtX(e.clientX);
-    e.preventDefault();
-  });
-  canvas.addEventListener('pointermove', e => {
-    // Mouse moves the paddle without a click; touch and pen follow the finger while down.
-    if (e.pointerType === 'mouse' || e.buttons || e.pressure > 0) player.target = toCourtX(e.clientX);
-  });
-  ['touchstart', 'touchmove'].forEach(t =>
-    canvas.addEventListener(t, e => e.preventDefault(), { passive: false }));
-
-  const keys = new Set();
-  window.addEventListener('keydown', e => {
-    const k = e.key.toLowerCase();
-    if (['arrowleft', 'arrowright', 'a', 'd'].includes(k)) { keys.add(k); player.target = null; e.preventDefault(); }
-    if ((k === 'p' || k === 'escape') && (state === 'playing' || state === 'serving')) pause();
-    else if ((k === 'p' || k === 'escape') && state === 'paused') resume();
-  });
-  window.addEventListener('keyup', e => keys.delete(e.key.toLowerCase()));
-
-  // ---------- menus ----------
-  function setLevel(l) {
-    level = l;
-    try { localStorage.setItem('pong-level', l); } catch (e) {}
-    document.querySelectorAll('[data-level]').forEach(b =>
-      b.setAttribute('aria-pressed', String(b.dataset.level === l)));
-  }
-  document.querySelectorAll('[data-level]').forEach(b =>
-    b.addEventListener('click', () => setLevel(b.dataset.level)));
-  setLevel(level);
-
-  function show(el) { [menu, pauseMenu, overMenu].forEach(m => m.hidden = m !== el); }
-
-  function newMatch() {
-    unlockAudio();
-    score.you = 0; score.ai = 0;
-    player.x = ai.x = W / 2 - PADDLE_W / 2;
-    player.target = null;
-    show(null);
-    pauseBtn.hidden = false;
-    startServe(Math.random() < 0.5 ? 1 : -1);
-  }
-  function pause() { state = 'paused'; show(pauseMenu); pauseBtn.hidden = true; }
-  function resume() { unlockAudio(); state = ball.vy === 0 ? 'serving' : 'playing'; show(null); pauseBtn.hidden = false; last = performance.now(); }
-  function toMenu() { state = 'menu'; show(menu); pauseBtn.hidden = true; resetBall(); draw(); }
-
-  $('startBtn').addEventListener('click', newMatch);
-  $('againBtn').addEventListener('click', newMatch);
-  $('menuBtn').addEventListener('click', toMenu);
-  $('quitBtn').addEventListener('click', toMenu);
-  $('resumeBtn').addEventListener('click', resume);
-  pauseBtn.addEventListener('click', pause);
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden && (state === 'playing' || state === 'serving')) pause();
-  });
-
-  // ---------- game logic ----------
-  function resetBall() {
-    ball.x = W / 2; ball.y = H / 2; ball.vx = 0; ball.vy = 0; ball.speed = BALL_START; ball.trail = [];
-  }
-  function startServe(dir) {
-    resetBall();
-    serveDir = dir; // +1 = toward player (down), -1 = toward AI (up)
-    serveTimer = 0.9;
-    state = 'serving';
-  }
-  function launch() {
-    const angle = (Math.random() * 2 - 1) * (Math.PI / 6);
-    ball.vx = Math.sin(angle) * ball.speed;
-    ball.vy = Math.cos(angle) * ball.speed * serveDir;
-    state = 'playing';
-    beep(520, 0.05);
-  }
-
-  function updatePlayer(dt) {
-    const dir = (keys.has('arrowright') || keys.has('d') ? 1 : 0) - (keys.has('arrowleft') || keys.has('a') ? 1 : 0);
-    if (dir) player.x += dir * 520 * dt;
-    else if (player.target != null) {
-      // Follow the finger closely but not instantly, so the paddle never teleports.
-      const want = player.target - PADDLE_W / 2;
-      player.x += (want - player.x) * Math.min(1, dt * 28);
-    }
-    player.x = Math.max(0, Math.min(W - PADDLE_W, player.x));
-  }
-
-  // Where will the ball cross line y, accounting for side-wall bounces?
-  function predictX(y) {
-    const t = (y - ball.y) / ball.vy;
-    let x = ball.x + ball.vx * t;
-    const lo = BALL_R, span = W - 2 * BALL_R;
-    x -= lo;
-    const period = 2 * span;
-    x = ((x % period) + period) % period;
-    if (x > span) x = period - x;
-    return x + lo;
-  }
-
-  function updateAI(dt) {
-    const cfg = LEVELS[level];
-    ai.think -= dt;
-    if (ai.think <= 0) {
-      ai.think = cfg.reaction;
-      if (state === 'playing' && ball.vy < 0) {
-        const aim = cfg.predict ? predictX(ai.y + PADDLE_H) : ball.x;
-        ai.target = aim + (Math.random() * 2 - 1) * cfg.error;
-      } else {
-        // Ball heading away: drift back toward the middle.
-        ai.target = W / 2 + (ball.x - W / 2) * 0.3;
-      }
-    }
-    const center = ai.x + PADDLE_W / 2;
-    const diff = ai.target - center;
-    const step = cfg.speed * dt;
-    ai.x += Math.abs(diff) <= step ? diff : Math.sign(diff) * step;
-    ai.x = Math.max(0, Math.min(W - PADDLE_W, ai.x));
-  }
-
-  function hitPaddle(p, dirAfter) {
-    // dirAfter: -1 sends the ball up (player hit), +1 sends it down (AI hit)
-    const off = Math.max(-1, Math.min(1, (ball.x - (p.x + PADDLE_W / 2)) / (PADDLE_W / 2 + BALL_R)));
-    const angle = off * MAX_BOUNCE;
-    ball.speed = Math.min(BALL_MAX, ball.speed + BALL_STEP);
-    ball.vx = Math.sin(angle) * ball.speed;
-    ball.vy = Math.cos(angle) * ball.speed * dirAfter;
-    beep(dirAfter < 0 ? 660 : 440, 0.05);
-  }
-
-  function stepBall(dt) {
-    ball.x += ball.vx * dt;
-    ball.y += ball.vy * dt;
-
-    if (ball.x < BALL_R) { ball.x = BALL_R; ball.vx = Math.abs(ball.vx); beep(300, 0.03, 'triangle'); }
-    if (ball.x > W - BALL_R) { ball.x = W - BALL_R; ball.vx = -Math.abs(ball.vx); beep(300, 0.03, 'triangle'); }
-
-    const inX = p => ball.x + BALL_R >= p.x && ball.x - BALL_R <= p.x + PADDLE_W;
-    if (ball.vy > 0 && ball.y + BALL_R >= player.y && ball.y - BALL_R <= player.y + PADDLE_H && inX(player)) {
-      ball.y = player.y - BALL_R;
-      hitPaddle(player, -1);
-    }
-    if (ball.vy < 0 && ball.y - BALL_R <= ai.y + PADDLE_H && ball.y + BALL_R >= ai.y && inX(ai)) {
-      ball.y = ai.y + PADDLE_H + BALL_R;
-      hitPaddle(ai, 1);
-    }
-
-    if (ball.y - BALL_R > H) return point('ai');
-    if (ball.y + BALL_R < 0) return point('you');
-  }
-
-  function point(who) {
-    score[who]++;
-    flash = 1; flashWho = who;
-    beep(who === 'you' ? 880 : 180, 0.18, who === 'you' ? 'square' : 'sawtooth', 0.05);
-    if (score[who] >= WIN_SCORE) return gameOver();
-    startServe(who === 'you' ? -1 : 1); // serve toward whoever just lost the point
-  }
-
-  function gameOver() {
-    state = 'over';
-    resetBall();
-    pauseBtn.hidden = true;
-    const won = score.you > score.ai;
-    $('resultText').textContent = won ? 'You win!' : 'AI wins';
-    $('finalScore').textContent = `${score.you} – ${score.ai}`;
-    show(overMenu);
-    setTimeout(() => { beep(won ? 523 : 330, 0.12); setTimeout(() => beep(won ? 784 : 220, 0.2), 130); }, 50);
-  }
-
-  function update(dt) {
-    if (state === 'menu' || state === 'over') {
-      // Attract mode: the AI paddles idle so the menu backdrop isn't frozen.
-      ai.target = W / 2 + Math.sin(performance.now() / 700) * 90;
-      updateAI(dt);
-      return;
-    }
-    if (state === 'paused') return;
-    updatePlayer(dt);
-    updateAI(dt);
-    if (flash > 0) flash = Math.max(0, flash - dt * 2.5);
-    if (state === 'serving') {
-      serveTimer -= dt;
-      if (serveTimer <= 0) launch();
-      return;
-    }
-    // Sub-step so a fast ball can't tunnel through a paddle.
-    const dist = ball.speed * dt;
-    const steps = Math.max(1, Math.ceil(dist / (BALL_R * 0.8)));
-    for (let i = 0; i < steps && state === 'playing'; i++) stepBall(dt / steps);
-    ball.trail.push({ x: ball.x, y: ball.y });
-    if (ball.trail.length > 8) ball.trail.shift();
-  }
-
-  // ---------- rendering ----------
-  const css = getComputedStyle(document.documentElement);
-  const C = {
-    table: css.getPropertyValue('--table').trim() || '#0f2a52',
-    chalk: css.getPropertyValue('--chalk').trim() || '#e9eef7',
-    you: css.getPropertyValue('--you').trim() || '#f4e7cf',
-    bot: css.getPropertyValue('--bot').trim() || '#6fb0ff',
-    ball: css.getPropertyValue('--ball').trim() || '#ff8a3d',
-  };
-
-  function roundRect(x, y, w, h, r) {
-    ctx.beginPath();
-    ctx.moveTo(x + r, y);
-    ctx.arcTo(x + w, y, x + w, y + h, r);
-    ctx.arcTo(x + w, y + h, x, y + h, r);
-    ctx.arcTo(x, y + h, x, y, r);
-    ctx.arcTo(x, y, x + w, y, r);
-    ctx.closePath();
-  }
-
-  function draw() {
-    ctx.setTransform(scale, 0, 0, scale, 0, 0);
-    ctx.fillStyle = C.table;
-    ctx.fillRect(0, 0, W, H);
-
-    // Court markings: outer line, centre line, and the net across the middle.
-    ctx.strokeStyle = 'rgba(233,238,247,.55)';
-    ctx.lineWidth = 3;
-    ctx.strokeRect(6, 6, W - 12, H - 12);
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = 'rgba(233,238,247,.18)';
-    ctx.beginPath(); ctx.moveTo(W / 2, 6); ctx.lineTo(W / 2, H - 6); ctx.stroke();
-    ctx.setLineDash([8, 7]);
-    ctx.strokeStyle = 'rgba(233,238,247,.6)';
-    ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.moveTo(0, H / 2); ctx.lineTo(W, H / 2); ctx.stroke();
-    ctx.setLineDash([]);
-
-    // Scores sit in each half, faint enough to play over.
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.font = '72px Bungee, "Arial Black", Impact, sans-serif';
-    const pulse = who => flash > 0 && flashWho === who ? 0.14 + flash * 0.5 : 0.14;
-    ctx.fillStyle = `rgba(111,176,255,${pulse('ai')})`;
-    ctx.fillText(String(score.ai), W / 2, H / 2 - 92);
-    ctx.fillStyle = `rgba(244,231,207,${pulse('you')})`;
-    ctx.fillText(String(score.you), W / 2, H / 2 + 96);
-    ctx.font = '600 11px "IBM Plex Mono", ui-monospace, monospace';
-    ctx.fillStyle = 'rgba(233,238,247,.35)';
-    ctx.fillText(`AI · ${level.toUpperCase()}`, W / 2, H / 2 - 40);
-    ctx.fillText('YOU', W / 2, H / 2 + 40);
-
-    // Paddles
-    ctx.fillStyle = C.bot;
-    roundRect(ai.x, ai.y, PADDLE_W, PADDLE_H, 6); ctx.fill();
-    ctx.fillStyle = C.you;
-    roundRect(player.x, player.y, PADDLE_W, PADDLE_H, 6); ctx.fill();
-
-    // Ball and its trail
-    if (state !== 'menu' && state !== 'over') {
-      ball.trail.forEach((p, i) => {
-        ctx.globalAlpha = (i + 1) / ball.trail.length * 0.25;
-        ctx.fillStyle = C.ball;
-        ctx.beginPath(); ctx.arc(p.x, p.y, BALL_R * (0.5 + i / ball.trail.length * 0.5), 0, Math.PI * 2); ctx.fill();
-      });
-      ctx.globalAlpha = state === 'serving' ? 0.5 + 0.5 * Math.abs(Math.sin(serveTimer * 8)) : 1;
-      ctx.fillStyle = C.ball;
-      ctx.beginPath(); ctx.arc(ball.x, ball.y, BALL_R, 0, Math.PI * 2); ctx.fill();
-      ctx.globalAlpha = 1;
-    }
-  }
-
-  let last = performance.now();
-  function frame(now) {
-    const dt = Math.min(0.033, (now - last) / 1000);
-    last = now;
-    update(dt);
-    draw();
-    requestAnimationFrame(frame);
-  }
-
-  resize();
-  if (document.fonts && document.fonts.ready) document.fonts.ready.then(draw);
-  requestAnimationFrame(frame);
-})();
-</script>
+  <script type="module" src="src/main.js"></script>
 </body>
 </html>
