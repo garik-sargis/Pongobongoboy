@@ -6,6 +6,7 @@ import { LEVEL_1 } from './level.js';
 import { createGame, step, debugAddFuel, debugDamageEngine, debugToggleSpawns } from './sim/game.js';
 import { setTrainRunning, repairCar } from './sim/train.js';
 import { recallAll, aliveCrew } from './sim/crew.js';
+import { moveCar, detachRear } from './sim/consist.js';
 import { pushMessage } from './sim/state.js';
 import { createRenderer } from './render/renderer.js';
 import { createCamera, updateCamera, snapCamera } from './render/camera.js';
@@ -41,6 +42,21 @@ const actions = {
     const res = repairCar(state, ui.selectedCarId);
     if (!res.ok) pushMessage(state, res.reason, 'bad');
   },
+  selectCar(id) {
+    ui.selectedCrew.clear();
+    ui.selectedCarId = id;
+  },
+  moveSelectedCar(dir) {
+    if (ui.selectedCarId == null || state.outcome) return;
+    const res = moveCar(state, ui.selectedCarId, dir);
+    if (!res.ok) pushMessage(state, res.reason, 'bad');
+  },
+  detachRear() {
+    if (state.outcome) return;
+    const res = detachRear(state);
+    if (!res.ok) pushMessage(state, res.reason, 'bad');
+    else if (res.car.id === ui.selectedCarId) ui.selectedCarId = null;
+  },
   isHelpOpen: () => !helpEl.hidden,
   toggleHelp() { helpEl.hidden = !helpEl.hidden; },
   closeHelp() { helpEl.hidden = true; },
@@ -54,9 +70,15 @@ const hud = createHud({
   onRecall: actions.recall,
   onRepair: actions.repair,
   onSelectCrew: actions.selectCrew,
+  onSelectCar: actions.selectCar,
+  onMoveCar: actions.moveSelectedCar,
+  onDetach: actions.detachRear,
 });
 
 bindInput({ canvas, minimap, getState: () => state, ui, cam, actions });
+
+// Console access for playtesting/tuning, e.g. `__train.state().fuel = 100`.
+window.__train = { state: () => state, ui, cam, config: CONFIG };
 
 document.getElementById('help-btn').addEventListener('click', actions.toggleHelp);
 document.getElementById('help-close').addEventListener('click', actions.closeHelp);
@@ -80,7 +102,9 @@ function showEnd() {
   const s = state.stats;
   document.getElementById('end-stats').textContent =
     `Time ${formatTime(state.time)} · crew alive ${aliveCrew(state).length}/${state.crew.length} · ` +
-    `kills ${s.kills} · fuel gathered ${Math.round(s.fuelGathered)} · scrap gathered ${Math.round(s.scrapGathered)}`;
+    `kills ${s.kills} · fuel gathered ${Math.round(s.fuelGathered)} · scrap gathered ${Math.round(s.scrapGathered)} · ` +
+    `cars salvaged ${s.salvaged} · survivors rescued ${s.rescued} · barricades rammed ${s.barricadesRammed} / cleared ${s.barricadesCleared} · ` +
+    `final train: ${state.train.cars.map((c) => CONFIG.cars[c.type].label.replace(' car', '')).reverse().join(' – ')} ▶`;
   endEl.hidden = false;
 }
 

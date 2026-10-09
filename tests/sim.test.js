@@ -113,7 +113,7 @@ test('crew gather fuel into the tanks, capped at capacity', () => {
   // Park the train next to the first fuel deposit.
   s.train.head = node.x + 40;
   const fuel0 = s.fuel;
-  for (const c of s.crew) assert.equal(orderCrew(s, c.id, { type: 'gather', nodeId: node.id }).ok, true);
+  for (const c of s.crew) assert.equal(orderCrew(s, c.id, { type: 'work', kind: 'node', id: node.id }).ok, true);
   run(s, 30);
   assert.ok(s.fuel > fuel0);
   assert.ok(s.fuel <= fuelCapacity(s));
@@ -125,7 +125,7 @@ test('gathering pauses while the worker is fighting', () => {
   const node = s.nodes.find((n) => n.kind === 'scrap');
   s.train.head = node.x + 40;
   const c = s.crew[0];
-  orderCrew(s, c.id, { type: 'gather', nodeId: node.id });
+  orderCrew(s, c.id, { type: 'work', kind: 'node', id: node.id });
   run(s, 6);
   assert.ok(s.scrap > 0, 'started gathering');
   const scrap = s.scrap;

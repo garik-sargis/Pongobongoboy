@@ -1,7 +1,8 @@
 // Canvas renderer. Gray-box placeholder shapes only; reads sim state, never mutates it.
 
 import { createRng } from '../sim/rng.js';
-import { carRect, trainTail } from '../sim/train.js';
+import { carRect, trainTail, ramDamage } from '../sim/train.js';
+import { getSite } from '../sim/sites.js';
 
 const COLORS = {
   ground: '#33342c',
@@ -55,9 +56,12 @@ export function createRenderer(canvas, minimap, level, config) {
     drawTrack(ctx, state, view);
     drawDistanceMarkers(ctx, state, view);
     drawNodes(ctx, state, ui, view);
+    drawWrecks(ctx, state, ui, view);
+    drawSurvivors(ctx, state, ui, view, time);
     drawTunnelBack(ctx, state);
     drawTrain(ctx, state, ui, time);
     drawTunnelFront(ctx, state);
+    drawBarricades(ctx, state, ui, view);
     drawOrders(ctx, state, ui);
     drawCrew(ctx, state, ui, time);
     drawEnemies(ctx, state, time);
@@ -297,6 +301,27 @@ function drawTrain(ctx, state, ui, time) {
       ctx.moveTo(r.cx, r.cy);
       ctx.lineTo(r.cx + Math.cos(a) * 22, r.cy + Math.sin(a) * 22);
       ctx.stroke();
+    } else if (car.type === 'ram') {
+      ctx.fillStyle = '#0005';
+      for (let k = 0; k < 3; k++) {
+        const x = r.x0 + 12 + k * 14;
+        ctx.beginPath();
+        ctx.moveTo(x, r.y0 + 6);
+        ctx.lineTo(x + 9, r.cy);
+        ctx.lineTo(x, r.y1 - 6);
+        ctx.closePath();
+        ctx.fill();
+      }
+      if (i === 0 && !disabled) {
+        // Active ram plate on the front.
+        ctx.fillStyle = '#d8d8e0';
+        ctx.beginPath();
+        ctx.moveTo(r.x1, r.y0 - 4);
+        ctx.lineTo(r.x1 + 12, r.cy);
+        ctx.lineTo(r.x1, r.y1 + 4);
+        ctx.closePath();
+        ctx.fill();
+      }
     } else if (car.type === 'fuelTank') {
       ctx.strokeStyle = '#0005';
       ctx.lineWidth = 2;
@@ -334,11 +359,11 @@ function drawOrders(ctx, state, ui) {
     if (c.order.type === 'move') {
       tx = c.order.x;
       ty = c.order.y;
-    } else if (c.order.type === 'gather') {
-      const n = state.nodes.find((n) => n.id === c.order.nodeId);
-      if (!n) continue;
-      tx = n.x;
-      ty = n.y;
+    } else if (c.order.type === 'work') {
+      const site = getSite(state, c.order);
+      if (!site) continue;
+      tx = site.x;
+      ty = site.y;
     } else {
       tx = Math.max(trainTail(state), Math.min(state.train.head, c.x));
       ty = state.config.world.trackY;
@@ -445,6 +470,110 @@ function drawEffects(ctx, state) {
   ctx.globalAlpha = 1;
 }
 
+function hoverIs(ui, kind, id) {
+  return ui.hover && ui.hover.kind === kind && ui.hover.id === id;
+}
+
+function progressBar(ctx, x, y, w, frac, color) {
+  ctx.fillStyle = '#000a';
+  ctx.fillRect(x, y, w, 5);
+  ctx.fillStyle = color;
+  ctx.fillRect(x, y, w * Math.max(0, Math.min(1, frac)), 5);
+}
+
+function drawWrecks(ctx, state, ui, view) {
+  const t = state.config.train;
+  for (const w of state.wrecks) {
+    if (w.done || w.x + 60 < view.x0 || w.x - 60 > view.x1) continue;
+    const def = state.config.cars[w.carType];
+    ctx.save();
+    ctx.translate(w.x, w.y);
+    ctx.rotate(0.12);
+    ctx.globalAlpha = 0.75;
+    ctx.fillStyle = def.color;
+    roundRect(ctx, -t.carLength / 2, -t.carHeight / 2, t.carLength, t.carHeight, 5);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.setLineDash([5, 4]);
+    ctx.strokeStyle = hoverIs(ui, 'wreck', w.id) ? COLORS.select : '#ddd';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+    ctx.fillStyle = COLORS.text;
+    ctx.font = 'bold 11px ui-monospace, monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(`WRECK: ${def.label.toUpperCase()}`, w.x, w.y - t.carHeight / 2 - 12);
+    ctx.font = '10px ui-monospace, monospace';
+    ctx.fillStyle = COLORS.hpMid;
+    ctx.fillText(`${w.hp}/${def.hp} HP · salvage to attach`, w.x, w.y + t.carHeight / 2 + 16);
+    if (w.work > 0) progressBar(ctx, w.x - 30, w.y + t.carHeight / 2 + 22, 60, w.work / w.workNeeded, COLORS.crewRing);
+  }
+}
+
+function drawBarricades(ctx, state, ui, view) {
+  for (const b of state.barricades) {
+    if (b.broken || b.x + 40 < view.x0 || b.x - 40 > view.x1) continue;
+    const h = 64;
+    const w = 18;
+    const x0 = b.x;
+    const y0 = b.y - h / 2;
+    ctx.fillStyle = '#3a2a1c';
+    ctx.fillRect(x0, y0, w, h);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x0, y0, w, h);
+    ctx.clip();
+    ctx.fillStyle = '#e8b33a';
+    for (let k = -2; k < 8; k++) {
+      ctx.beginPath();
+      ctx.moveTo(x0, y0 + k * 12);
+      ctx.lineTo(x0 + w, y0 + k * 12 + 10);
+      ctx.lineTo(x0 + w, y0 + k * 12 + 16);
+      ctx.lineTo(x0, y0 + k * 12 + 6);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+    ctx.strokeStyle = hoverIs(ui, 'barricade', b.id) ? COLORS.select : '#000';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x0, y0, w, h);
+
+    const dmg = ramDamage(state, b);
+    const front = state.config.cars[state.train.cars[0].type].label;
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 11px ui-monospace, monospace';
+    ctx.fillStyle = COLORS.text;
+    ctx.fillText(`BARRICADE (${b.strength})`, b.x + w / 2, y0 - 22);
+    ctx.font = '10px ui-monospace, monospace';
+    ctx.fillStyle = dmg >= 40 ? COLORS.hpBad : COLORS.hpGood;
+    ctx.fillText(`ram: -${dmg} HP to ${front}`, b.x + w / 2, y0 - 9);
+    if (b.work > 0) progressBar(ctx, b.x - 21, b.y + h / 2 + 6, 60, b.work / b.workNeeded, COLORS.crewRing);
+  }
+}
+
+function drawSurvivors(ctx, state, ui, view, time) {
+  for (const sv of state.survivors) {
+    if (sv.rescued || sv.x + 40 < view.x0 || sv.x - 40 > view.x1) continue;
+    const pulse = 0.5 + 0.5 * Math.sin(time * 4);
+    ctx.strokeStyle = `rgba(63,182,168,${0.3 + 0.5 * pulse})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(sv.x, sv.y, 14 + pulse * 4, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = COLORS.crew;
+    ctx.beginPath();
+    ctx.arc(sv.x, sv.y, 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = hoverIs(ui, 'survivor', sv.id) ? COLORS.select : COLORS.crewRing;
+    ctx.stroke();
+    ctx.fillStyle = COLORS.text;
+    ctx.font = 'bold 11px ui-monospace, monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('SURVIVOR — rescue?', sv.x, sv.y - 24);
+  }
+}
+
 // --- Screen space -------------------------------------------------------
 
 function drawOffscreenIndicators(ctx, state, cam, W, time) {
@@ -496,6 +625,25 @@ function renderMinimap(ctx, canvas, state, cam, dpr) {
     ctx.fill();
   }
   ctx.globalAlpha = 1;
+  const my = (y) => 3 + (y / state.config.world.height) * (H - 6);
+  for (const w of state.wrecks) {
+    if (w.done) continue;
+    ctx.strokeStyle = state.config.cars[w.carType].color;
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(sx(w.x) - 4, my(w.y) - 3, 8, 6);
+  }
+  for (const sv of state.survivors) {
+    if (sv.rescued) continue;
+    ctx.fillStyle = COLORS.crewRing;
+    ctx.beginPath();
+    ctx.arc(sx(sv.x), my(sv.y), 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  for (const b of state.barricades) {
+    if (b.broken) continue;
+    ctx.fillStyle = '#e8b33a';
+    ctx.fillRect(sx(b.x) - 2, mid - 7, 4, 14);
+  }
 
   ctx.fillStyle = COLORS.text;
   ctx.fillRect(sx(end) - 1, 2, 3, H - 4);

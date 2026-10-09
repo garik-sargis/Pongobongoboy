@@ -17,4 +17,17 @@ export const LEVEL_1 = {
     { kind: 'scrap', x: 9200, y: 150, amount: 30 },
     { kind: 'fuel',  x: 10000, y: 215, amount: 20 },
   ],
+  // Derelict cars beside the track; crew can salvage them onto the back of the train.
+  wrecks: [
+    { carType: 'ram', x: 1700, y: 225, hpFraction: 0.5 },     // before the first barricade
+    { carType: 'turret', x: 8400, y: 205, hpFraction: 0.6 },
+  ],
+  // Obstructions on the track: ram through (damage to the front car) or clear by hand.
+  barricades: [
+    { x: 4300, strength: 70 },
+    { x: 9600, strength: 140 },
+  ],
+  survivors: [
+    { name: 'Cato', x: 5100, y: 480 },
+  ],
 };

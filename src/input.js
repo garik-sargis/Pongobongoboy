@@ -5,15 +5,24 @@ import { carRect } from './sim/train.js';
 import { orderCrew } from './sim/crew.js';
 import { pushMessage, dist } from './sim/state.js';
 
-// What is under a world point: crew > node > car > ground.
+// What is under a world point: crew > survivor > node > barricade > wreck > car > ground.
 export function hitTest(state, x, y) {
   for (const c of state.crew) {
     if (!c.alive) continue;
     const r = c.aboard ? 7 : state.config.crew.radius + 4;
     if (dist(x, y, c.x, c.y) <= r) return { kind: 'crew', id: c.id };
   }
+  for (const sv of state.survivors) {
+    if (!sv.rescued && dist(x, y, sv.x, sv.y) <= 16) return { kind: 'survivor', id: sv.id };
+  }
   for (const n of state.nodes) {
     if (n.amount > 0 && dist(x, y, n.x, n.y) <= n.radius + 6) return { kind: 'node', id: n.id };
+  }
+  for (const b of state.barricades) {
+    if (!b.broken && x >= b.x - 10 && x <= b.x + 28 && Math.abs(y - b.y) <= 40) return { kind: 'barricade', id: b.id };
+  }
+  for (const w of state.wrecks) {
+    if (!w.done && Math.abs(x - w.x) <= 38 && Math.abs(y - w.y) <= 24) return { kind: 'wreck', id: w.id };
   }
   for (let i = 0; i < state.train.cars.length; i++) {
     const r = carRect(state, i);
@@ -29,7 +38,7 @@ export function issueOrder(state, ui, x, y) {
   const ids = [...ui.selectedCrew];
   ids.forEach((id, i) => {
     let order;
-    if (hit.kind === 'node') order = { type: 'gather', nodeId: hit.id };
+    if (['node', 'barricade', 'wreck', 'survivor'].includes(hit.kind)) order = { type: 'work', kind: hit.kind, id: hit.id };
     else if (hit.kind === 'car') order = { type: 'board' };
     else {
       // Spread a group out slightly so they don't stack.
@@ -119,6 +128,10 @@ export function bindInput({ canvas, minimap, getState, ui, cam, actions }) {
         break;
       }
       case 'r': actions.recall(); break;
+      // The train faces right: Q shifts the selected car left (toward the rear), E right (toward the front).
+      case 'q': actions.moveSelectedCar(1); break;
+      case 'e': actions.moveSelectedCar(-1); break;
+      case 'x': actions.detachRear(); break;
       case 'f': snapCamera(cam, state); break;
       case 'escape': actions.closeHelp(); ui.selectedCrew.clear(); ui.selectedCarId = null; break;
       case 'h': actions.toggleHelp(); break;

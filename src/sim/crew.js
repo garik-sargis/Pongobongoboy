@@ -1,9 +1,10 @@
 // Crew: generalists who ride the train, and while it is stopped can be sent
-// out to move, gather fuel/scrap, and fight (automatically).
+// out to move, work at sites (gather, salvage, clear, rescue), and fight automatically.
 
-import { pushMessage, moveToward, dist } from './state.js';
-import { carRect, isStationary, nearestCarIndex, nearestPointOnCar, fuelCapacity } from './train.js';
+import { moveToward, dist } from './state.js';
+import { carRect, isStationary, nearestCarIndex, nearestPointOnCar } from './train.js';
 import { findEnemyTarget, shoot, damageEnemy } from './combat.js';
+import { getSite, siteActive, workSite } from './sites.js';
 
 export function aliveCrew(state) {
   return state.crew.filter((c) => c.alive);
@@ -13,7 +14,10 @@ export function crewOutside(state) {
   return state.crew.filter((c) => c.alive && !c.aboard);
 }
 
-// Orders: { type: 'move', x, y } | { type: 'gather', nodeId } | { type: 'board' }
+// Orders:
+//   { type: 'move', x, y }
+//   { type: 'work', kind: 'node'|'wreck'|'barricade'|'survivor', id }
+//   { type: 'board' }
 export function orderCrew(state, crewId, order) {
   const c = state.crew.find((m) => m.id === crewId);
   if (!c || !c.alive || state.outcome) return { ok: false, reason: 'Unavailable' };
@@ -36,10 +40,7 @@ export function recallAll(state) {
 
 function orderTarget(state, order) {
   if (order.type === 'move') return { x: order.x, y: order.y };
-  if (order.type === 'gather') {
-    const n = state.nodes.find((n) => n.id === order.nodeId);
-    return n ? { x: n.x, y: n.y } : null;
-  }
+  if (order.type === 'work') return getSite(state, order);
   return null;
 }
 
@@ -49,7 +50,8 @@ function disembark(state, c, order) {
   const { index } = nearestCarIndex(state, target.x, target.y);
   const r = carRect(state, index);
   const side = target.y < state.config.world.trackY ? -1 : 1;
-  c.x = Math.max(r.x0, Math.min(r.x1, target.x));
+  // Stagger by crew id so a group stepping off together doesn't stack.
+  c.x = Math.max(r.x0, Math.min(r.x1, target.x)) + ((c.id % 3) - 1) * 14;
   c.y = state.config.world.trackY + side * (state.config.train.carHeight / 2 + state.config.crew.radius + 2);
   c.aboard = false;
 }
@@ -66,8 +68,10 @@ export function updateCrew(state, dt) {
   const cfg = state.config.crew;
   const worldH = state.config.world.height;
 
-  state.crew.forEach((c, idx) => {
-    if (!c.alive) return;
+  // Index loop: rescues can append crew mid-update.
+  for (let idx = 0; idx < state.crew.length; idx++) {
+    const c = state.crew[idx];
+    if (!c.alive) continue;
     c.working = false;
 
     if (c.aboard) {
@@ -76,7 +80,7 @@ export function updateCrew(state, dt) {
       c.y = seat.y;
       c.fighting = false;
       c.order = null;
-      return;
+      continue;
     }
 
     // Auto-fight: always shoot the nearest enemy in range (rushers first).
@@ -91,69 +95,50 @@ export function updateCrew(state, dt) {
 
     const step = cfg.speed * dt;
     const order = c.order;
-    if (!order) return;
-
-    if (order.type === 'move') {
-      if (moveToward(c, order.x, order.y, step)) c.order = null;
-    } else if (order.type === 'gather') {
-      updateGather(state, c, order, step, dt);
-    } else if (order.type === 'board') {
-      const { index } = nearestCarIndex(state, c.x, c.y);
-      const p = nearestPointOnCar(state, index, c.x, c.y);
-      if (dist(c.x, c.y, p.x, p.y) <= cfg.boardRange) {
-        c.aboard = true;
-        c.order = null;
-      } else {
-        moveToward(c, p.x, p.y, step);
+    if (order) {
+      if (order.type === 'move') {
+        if (moveToward(c, order.x, order.y, step)) c.order = null;
+      } else if (order.type === 'work') {
+        updateWork(state, c, order, step, dt);
+      } else if (order.type === 'board') {
+        const { index } = nearestCarIndex(state, c.x, c.y);
+        const p = nearestPointOnCar(state, index, c.x, c.y);
+        if (dist(c.x, c.y, p.x, p.y) <= cfg.boardRange) {
+          c.aboard = true;
+          c.order = null;
+        } else {
+          moveToward(c, p.x, p.y, step);
+        }
       }
     }
 
     c.y = Math.max(cfg.radius, Math.min(worldH - cfg.radius, c.y));
-  });
+  }
 }
 
-function updateGather(state, c, order, step, dt) {
+function updateWork(state, c, order, step, dt) {
   const cfg = state.config.crew;
-  const node = state.nodes.find((n) => n.id === order.nodeId);
-  if (!node || node.amount <= 0) {
+  const site = getSite(state, order);
+  if (!siteActive(order.kind, site)) {
     c.order = null;
+    c.blocked = null;
     return;
   }
-  const reach = node.radius + cfg.interactRange;
-  if (dist(c.x, c.y, node.x, node.y) > reach) {
-    // Walk to the near edge of the deposit.
-    const d = dist(c.x, c.y, node.x, node.y);
-    const tx = node.x + ((c.x - node.x) / d) * (reach - 4);
-    const ty = node.y + ((c.y - node.y) / d) * (reach - 4);
+  const reach = site.radius + cfg.interactRange;
+  const d = dist(c.x, c.y, site.x, site.y);
+  if (d > reach) {
+    // Walk to the near edge of the site, fanned out a little per crew member so they don't stack.
+    const angle = Math.atan2(c.y - site.y, c.x - site.x) + ((c.id % 4) - 1.5) * 0.45;
+    const tx = site.x + Math.cos(angle) * (reach - 4);
+    const ty = site.y + Math.sin(angle) * (reach - 4);
     moveToward(c, tx, ty, step);
     return;
   }
-  if (cfg.pauseGatherWhenFighting && c.fighting) {
-    c.blocked = 'fighting';
-    return;
-  }
-
-  let take = Math.min(cfg.gatherRate * dt, node.amount);
-  if (node.kind === 'fuel') {
-    const space = fuelCapacity(state) - state.fuel;
-    if (space <= 0) {
-      if (c.blocked !== 'full') pushMessage(state, 'Fuel tanks are full', 'info');
-      c.blocked = 'full';
-      return;
-    }
-    take = Math.min(take, space);
-    state.fuel += take;
-    state.stats.fuelGathered += take;
-  } else {
-    state.scrap += take;
-    state.stats.scrapGathered += take;
-  }
-  c.blocked = null;
-  c.working = true;
-  node.amount -= take;
-  if (node.amount <= 1e-6) {
-    node.amount = 0;
-    pushMessage(state, `${node.kind === 'fuel' ? 'Fuel' : 'Scrap'} deposit exhausted`, 'info');
+  const res = workSite(state, c, order.kind, site, dt);
+  c.working = res.working;
+  c.blocked = res.blocked;
+  if (res.done) {
     c.order = null;
+    c.blocked = null;
   }
 }

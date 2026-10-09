@@ -83,22 +83,36 @@
   #paused { position: absolute; bottom: 10px; right: 12px; color: var(--warn); font-weight: 600; pointer-events: none; }
 
   /* --- Bottom bar: controls --- */
-  #bottom { background: var(--panel); border-top: 1px solid var(--line); padding: 8px 12px; display: flex; gap: 14px; align-items: stretch; }
+  #bottom { background: var(--panel); border-top: 1px solid var(--line); padding: 6px 12px 8px; display: flex; flex-direction: column; gap: 6px; }
+  #bottom .row { display: flex; gap: 14px; align-items: stretch; }
+  #bottom .train-row { align-items: center; gap: 8px; }
+  .train-row .label { color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; margin-right: 4px; }
+  #consist { display: flex; gap: 6px; align-items: center; }
+  #consist::after { content: '▶ front'; color: var(--dim); font-size: 11px; margin-left: 2px; }
+  .chip { display: flex; align-items: center; gap: 6px; padding: 3px 8px; font-size: 12px; }
+  .chip.selected { border-color: var(--select); box-shadow: 0 0 0 1px var(--select) inset; }
+  .chip.dead { opacity: 0.55; text-decoration: line-through; }
+  .chip .swatch { width: 10px; height: 10px; border-radius: 2px; }
+  .chip .hp { width: 34px; height: 4px; background: #0007; border-radius: 2px; overflow: hidden; }
+  .chip .hp > i { display: block; height: 100%; background: var(--good); }
+  #detach { margin-left: auto; }
+  #info .buttons { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
   #go {
     min-width: 150px; font-size: 16px; font-weight: 700; letter-spacing: 0.04em;
     background: #2f4a2a; border-color: #4d7a45;
   }
   #go.stop { background: #5a2a24; border-color: #8a4238; }
   #crew-cards { display: flex; gap: 8px; }
-  .crew-card { width: 150px; text-align: left; display: flex; flex-direction: column; gap: 3px; }
+  .crew-card { width: 138px; text-align: left; display: flex; flex-direction: column; gap: 3px; }
   .crew-card.selected { border-color: var(--select); box-shadow: 0 0 0 1px var(--select) inset; }
   .crew-card.dead { opacity: 0.4; text-decoration: line-through; }
   .crew-card .row { display: flex; justify-content: space-between; }
   .crew-card .status { color: var(--dim); font-size: 11px; }
   .crew-card .meter { width: 100%; height: 6px; }
   .crew-card .meter > i { background: var(--crew); }
-  #info { flex: 1; background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; display: flex; gap: 12px; align-items: center; min-width: 0; }
-  #info .text { flex: 1; min-width: 0; }
+  #info { flex: 1; background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; min-width: 0; }
+  #info .text { flex: 1 1 340px; min-width: 0; }
+  #info .buttons button { padding: 4px 8px; font-size: 12px; }
   #info .title { font-weight: 600; }
   #info .desc { color: var(--dim); font-size: 12px; }
   .side-buttons { display: flex; flex-direction: column; gap: 6px; }
@@ -167,6 +181,12 @@
   </main>
 
   <footer id="bottom">
+    <div class="row train-row">
+      <span class="label">Train</span>
+      <div id="consist"></div>
+      <button id="detach" title="Drop the rear car, even while moving (X). It stays behind as a wreck you can re-attach.">Detach rear <kbd>X</kbd></button>
+    </div>
+    <div class="row">
     <button id="go" title="Start / stop the train (Space)">GO <kbd>Space</kbd></button>
     <div id="crew-cards"></div>
     <div class="side-buttons">
@@ -178,7 +198,12 @@
         <div class="title" id="info-title"></div>
         <div class="desc" id="info-desc"></div>
       </div>
-      <button id="repair" hidden></button>
+      <div class="buttons">
+        <button id="to-rear" hidden title="Swap toward the rear (Q). Only while stopped.">◀ Toward rear <kbd>Q</kbd></button>
+        <button id="to-front" hidden title="Swap toward the front (E). Only while stopped.">Toward front ▶ <kbd>E</kbd></button>
+        <button id="repair" hidden></button>
+      </div>
+    </div>
     </div>
   </footer>
 
@@ -191,13 +216,16 @@
       <ul>
         <li><kbd>Space</kbd> or the GO button: start / stop the train</li>
         <li><b>Click a crew member</b> (or <kbd>1</kbd> <kbd>2</kbd>, crew cards) to select. <kbd>Shift</kbd> adds to selection.</li>
-        <li>With crew selected, <b>click</b> (left or right) the ground to move, a <span class="legend" style="background:var(--fuel)"></span>fuel or <span class="legend" style="background:var(--scrap)"></span>scrap deposit to gather, or the train to board.</li>
+        <li>With crew selected, <b>click</b> (left or right) the ground to move, a <span class="legend" style="background:var(--fuel)"></span>fuel or <span class="legend" style="background:var(--scrap)"></span>scrap deposit to gather, a <b>wreck</b> to salvage it onto your train, a <b>barricade</b> to tear it down, a <b>survivor</b> to rescue them, or the train to board.</li>
         <li>Crew can only leave the train while it is stopped. If you drive off, anyone outside is left behind.</li>
         <li><kbd>R</kbd> recall all crew &nbsp; <kbd>Esc</kbd> deselect</li>
-        <li><b>Click a car</b> (with no crew selected) to inspect it and repair it with scrap while stopped.</li>
+        <li><b>Click a car</b> (or its chip in the Train strip) to inspect it. While stopped you can repair it with scrap, or shunt it toward the front/rear with <kbd>Q</kbd>/<kbd>E</kbd> (takes a moment; the train can't move meanwhile).</li>
+        <li><kbd>X</kbd> detaches the rear car, even while moving: lighter train, less fuel burn, but you lose that car (it stays behind as a wreck).</li>
         <li><kbd>A</kbd>/<kbd>D</kbd> or arrows / mouse wheel: look ahead or behind. <kbd>F</kbd> follow train. Click the route bar to jump.</li>
         <li><kbd>P</kbd> pause &nbsp; <kbd>H</kbd> this help</li>
       </ul>
+      <h2>Barricades</h2>
+      <p>A barricade on the track is rammed by whatever car is at the <b>front</b>, which takes the hit. The locomotive takes the full damage; a <b>ram car</b> at the front takes a fraction. Or stop and have crew tear it down by hand (it takes time, and gives scrap). A train that's too slow (e.g. out of fuel) can't ram at all.</p>
       <h2>Enemies</h2>
       <ul>
         <li><span class="legend" style="background:#cf4545"></span><b>Shooter</b>: approaches and fires at the nearest crew member or car.</li>

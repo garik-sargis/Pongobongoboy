@@ -1,7 +1,7 @@
 // Train: car layout, movement, fuel, and car-mounted weapons.
 
-import { pushMessage } from './state.js';
-import { findEnemyTarget, shoot, damageEnemy } from './combat.js';
+import { pushMessage, addEffect } from './state.js';
+import { findEnemyTarget, shoot, damageEnemy, damageCar } from './combat.js';
 
 // --- Layout -------------------------------------------------------------
 
@@ -43,9 +43,13 @@ export function nearestCarIndex(state, x, y, { aliveOnly = false } = {}) {
 
 // --- Fuel ---------------------------------------------------------------
 
+export function trainWeight(state) {
+  return state.train.cars.reduce((sum, car) => sum + (state.config.cars[car.type].weight ?? 1), 0);
+}
+
 export function fuelBurnPer100(state) {
   const t = state.config.train;
-  return t.fuelPer100Base + t.fuelPer100PerCar * state.train.cars.length;
+  return t.fuelPer100Base + t.fuelPer100PerCar * trainWeight(state);
 }
 
 export function fuelCapacity(state) {
@@ -60,6 +64,11 @@ export function fuelCapacity(state) {
 
 export function isStationary(state) {
   return state.train.speed < 0.5;
+}
+
+// The train will not move this frame even if running (shunting or blocked).
+export function isHeld(state) {
+  return state.train.shunting > 0 || state.train.blockedBy != null;
 }
 
 export function isCrawling(state) {
@@ -80,11 +89,19 @@ export function setTrainRunning(state, running) {
 export function updateTrain(state, dt) {
   const tr = state.train;
   const t = state.config.train;
-  const target = tr.running ? (state.fuel > 0 ? t.maxSpeed : t.maxSpeed * t.crawlSpeedFraction) : 0;
+  tr.shunting = Math.max(0, tr.shunting - dt);
+  const canMove = tr.running && tr.shunting === 0;
+  const target = canMove ? (state.fuel > 0 ? t.maxSpeed : t.maxSpeed * t.crawlSpeedFraction) : 0;
   if (tr.speed < target) tr.speed = Math.min(target, tr.speed + t.accel * dt);
   else tr.speed = Math.max(target, tr.speed - t.decel * dt);
 
-  const d = tr.speed * dt;
+  let d = tr.speed * dt;
+  tr.blockedBy = null;
+  const barricade = nextBarricade(state);
+  if (barricade && tr.head + d >= barricade.x) {
+    d = Math.max(0, barricade.x - tr.head);
+    hitBarricade(state, barricade);
+  }
   if (d > 0) {
     tr.head += d;
     tr.distance += d;
@@ -99,6 +116,45 @@ export function updateTrain(state, dt) {
   for (const car of tr.cars) {
     if (car.hitFlash) car.hitFlash = Math.max(0, car.hitFlash - dt);
   }
+}
+
+// --- Barricades ---------------------------------------------------------
+
+export function nextBarricade(state) {
+  let best = null;
+  for (const b of state.barricades) {
+    if (b.broken || b.x < state.train.head - 1) continue;
+    if (!best || b.x < best.x) best = b;
+  }
+  return best;
+}
+
+// Damage the front car would take ramming this barricade right now.
+export function ramDamage(state, barricade) {
+  const front = state.train.cars[0];
+  const def = state.config.cars[front.type];
+  const mult = front.hp > 0 && def.ramDamageMultiplier != null ? def.ramDamageMultiplier : 1;
+  return Math.round(barricade.strength * mult);
+}
+
+function hitBarricade(state, b) {
+  const tr = state.train;
+  const cfg = state.config.barricade;
+  if (tr.speed < cfg.minRamSpeed) {
+    // Too slow to break through: the train stops against it.
+    tr.head = b.x;
+    tr.speed = 0;
+    tr.blockedBy = b.id;
+    return;
+  }
+  const front = tr.cars[0];
+  const dmg = ramDamage(state, b);
+  damageCar(state, front, dmg);
+  b.broken = true;
+  tr.speed *= cfg.speedAfterRam;
+  state.stats.barricadesRammed++;
+  addEffect(state, { kind: 'burst', x: b.x, y: b.y, r: 50, color: '#ffb347', ttl: 0.6 });
+  pushMessage(state, `Rammed the barricade: ${state.config.cars[front.type].label} -${dmg} HP`, dmg > 40 ? 'bad' : 'info');
 }
 
 // --- Car-mounted weapons ------------------------------------------------

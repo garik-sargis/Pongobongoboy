@@ -1,6 +1,7 @@
 // DOM heads-up display: resource readouts, warnings, crew cards, info panel.
 
-import { fuelCapacity, fuelBurnPer100, isStationary, isCrawling } from '../sim/train.js';
+import { fuelCapacity, fuelBurnPer100, isStationary, isCrawling, trainWeight, nextBarricade, ramDamage } from '../sim/train.js';
+import { getSite } from '../sim/sites.js';
 import { aliveCrew, crewOutside } from '../sim/crew.js';
 import { threatFraction, threatTrend } from '../sim/spawner.js';
 
@@ -27,15 +28,21 @@ export function createHud(handlers) {
     warnings: $('warnings'), messages: $('messages'),
     go: $('go'), crewCards: $('crew-cards'),
     infoTitle: $('info-title'), infoDesc: $('info-desc'), repair: $('repair'),
+    toFront: $('to-front'), toRear: $('to-rear'), detach: $('detach'), consist: $('consist'),
     paused: $('paused'),
   };
   let cardsFor = null;
+  let cardsCount = 0;
+  let consistKey = '';
   let lastWarnings = '';
   let lastMessages = '';
 
   els.go.addEventListener('click', handlers.onToggleTrain);
   $('recall').addEventListener('click', handlers.onRecall);
   els.repair.addEventListener('click', handlers.onRepair);
+  els.toFront.addEventListener('click', () => handlers.onMoveCar(-1));
+  els.toRear.addEventListener('click', () => handlers.onMoveCar(1));
+  els.detach.addEventListener('click', handlers.onDetach);
 
   function buildCards(state) {
     els.crewCards.innerHTML = '';
@@ -48,6 +55,26 @@ export function createHud(handlers) {
       els.crewCards.appendChild(b);
     });
     cardsFor = state;
+    cardsCount = state.crew.length;
+  }
+
+  // Train composition strip, drawn in screen order: rear on the left, front on the right.
+  function updateConsist(state, ui) {
+    const cars = state.train.cars;
+    const key = cars.map((c) => `${c.id}:${Math.ceil(c.hp)}`).join(',') + `|${ui.selectedCarId}`;
+    if (key === consistKey) return;
+    consistKey = key;
+    els.consist.innerHTML = '';
+    for (let i = cars.length - 1; i >= 0; i--) {
+      const car = cars[i];
+      const def = state.config.cars[car.type];
+      const b = document.createElement('button');
+      b.className = 'chip' + (ui.selectedCarId === car.id ? ' selected' : '') + (car.hp <= 0 ? ' dead' : '');
+      b.title = `${def.label} — ${Math.ceil(car.hp)}/${car.maxHp} HP`;
+      b.innerHTML = `<span class="swatch" style="background:${def.color}"></span>${def.label.replace(' car', '')}<span class="hp"><i style="width:${(car.hp / car.maxHp) * 100}%"></i></span>`;
+      b.addEventListener('click', () => handlers.onSelectCar(car.id));
+      els.consist.appendChild(b);
+    }
   }
 
   function crewStatus(state, c) {
@@ -57,16 +84,21 @@ export function createHud(handlers) {
     if (!c.order) return (c.fighting ? 'Fighting' : 'Idle outside') + left;
     if (c.order.type === 'board') return 'Returning to train' + left;
     if (c.order.type === 'move') return 'Moving' + left;
-    const node = state.nodes.find((n) => n.id === c.order.nodeId);
-    const kind = node ? node.kind : '';
+    const site = getSite(state, c.order);
+    const what = c.order.kind === 'node' ? (site ? site.kind : '')
+      : c.order.kind === 'wreck' ? 'salvage'
+        : c.order.kind === 'barricade' ? 'barricade' : 'survivor';
+    const verb = c.order.kind === 'node' ? 'Gathering' : c.order.kind === 'wreck' ? 'Salvaging' : 'Clearing';
     if (c.blocked === 'full') return 'Fuel tanks full' + left;
-    if (c.blocked === 'fighting') return `Fighting (${kind} paused)` + left;
-    if (c.working) return `Gathering ${kind}` + left;
-    return `Going to ${kind}` + left;
+    if (c.blocked === 'needTrain') return 'Salvage: stop the train nearby';
+    if (c.blocked === 'fighting') return `Fighting (${what} paused)` + left;
+    if (c.working) return `${verb} ${c.order.kind === 'node' ? what : ''}`.trim() + left;
+    return `Going to ${what}` + left;
   }
 
   function update(state, ui) {
-    if (cardsFor !== state) buildCards(state);
+    if (cardsFor !== state || cardsCount !== state.crew.length) buildCards(state);
+    updateConsist(state, ui);
     const cfg = state.config;
 
     // Fuel & burn
@@ -79,8 +111,8 @@ export function createHud(handlers) {
     const moving = !isStationary(state);
     setText(els.burnSub,
       isCrawling(state) ? 'EMPTY — crawling'
-        : moving ? `burning · ${state.train.cars.length} cars`
-          : `idle · ${state.train.cars.length} cars`);
+        : moving ? `burning · ${state.train.cars.length} cars, weight ${trainWeight(state)}`
+          : `idle · ${state.train.cars.length} cars, weight ${trainWeight(state)}`);
     els.burnSub.style.color = moving && !isCrawling(state) ? 'var(--fuel)' : isCrawling(state) ? 'var(--bad)' : '';
 
     // Engine
@@ -139,6 +171,18 @@ export function createHud(handlers) {
     const rushers = state.enemies.filter((e) => e.type === 'rusher').length;
     if (rushers) warnings.push(['bad', `${rushers} rusher${rushers > 1 ? 's' : ''} incoming`]);
     if (f >= 0.7) warnings.push(['bad', 'Threat overwhelming — leave!']);
+    const b = nextBarricade(state);
+    if (b) {
+      const meters = Math.round((b.x - state.train.head) / cfg.world.pxPerMeter);
+      const front = cfg.cars[state.train.cars[0].type].label;
+      if (state.train.blockedBy === b.id) {
+        warnings.push(['bad', 'Blocked by barricade — too slow to ram. Clear it by hand.']);
+      } else if (meters <= 80) {
+        const dmg = ramDamage(state, b);
+        warnings.push([dmg >= 40 ? 'bad' : 'caution', `Barricade in ${meters} m — ram: -${dmg} HP to ${front}`]);
+      }
+    }
+    if (state.train.shunting > 0) warnings.push(['caution', 'Shunting cars…']);
     const wKey = warnings.map((w) => w.join(':')).join('|');
     if (wKey !== lastWarnings) {
       lastWarnings = wKey;
@@ -164,6 +208,11 @@ export function createHud(handlers) {
       }
     }
 
+    const rear = state.train.cars[state.train.cars.length - 1];
+    const canDetach = state.train.cars.length > 1 && rear.type !== 'locomotive';
+    els.detach.disabled = !canDetach;
+    setText(els.detach.firstChild, canDetach ? `Detach ${cfg.cars[rear.type].label.replace(' car', '')} ` : 'Detach rear ');
+
     updateInfo(state, ui);
     els.paused.hidden = !ui.paused;
   }
@@ -176,8 +225,15 @@ export function createHud(handlers) {
       const idx = state.train.cars.indexOf(car);
       const pos = idx === 0 ? 'front' : idx === state.train.cars.length - 1 ? 'rear' : `position ${idx + 1}`;
       setText(els.infoTitle, `${def.label} — ${Math.ceil(car.hp)} / ${car.maxHp} HP${car.hp <= 0 ? ' (DISABLED)' : ''} · ${pos}`);
-      setText(els.infoDesc, def.role);
+      let effect = '';
+      if (car.type === 'ram') effect = idx === 0 ? ' ✔ Active (at front).' : ' ✘ Inactive — move it to the front.';
+      setText(els.infoDesc, def.role + effect);
       els.repair.hidden = false;
+      const canShunt = isStationary(state) && state.train.shunting === 0;
+      els.toFront.hidden = false;
+      els.toRear.hidden = false;
+      els.toFront.disabled = !canShunt || idx === 0;
+      els.toRear.disabled = !canShunt || idx === state.train.cars.length - 1;
       const r = cfg.repair;
       const can = isStationary(state) && car.hp < car.maxHp && state.scrap >= r.scrapCost;
       els.repair.disabled = !can;
@@ -186,12 +242,14 @@ export function createHud(handlers) {
       return;
     }
     els.repair.hidden = true;
+    els.toFront.hidden = true;
+    els.toRear.hidden = true;
     if (ui.selectedCrew.size) {
       setText(els.infoTitle, `${ui.selectedCrew.size} crew selected`);
-      setText(els.infoDesc, 'Click ground to move · click a fuel/scrap deposit to gather · click the train to board. Crew shoot automatically.');
+      setText(els.infoDesc, 'Click ground to move · a deposit to gather · a wreck to salvage · a barricade to clear · a survivor to rescue · the train to board.');
     } else {
       setText(els.infoTitle, state.started ? 'Nothing selected' : 'Press Space (or GO) to depart');
-      setText(els.infoDesc, 'Select crew with 1/2 or by clicking them. Click a car to inspect or repair it.');
+      setText(els.infoDesc, 'Select crew with 1/2 or by clicking them. Click a car (or a chip on the left) to inspect, repair or move it.');
     }
   }
 

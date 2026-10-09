@@ -17,7 +17,7 @@ export const CONFIG = {
     carLength: 64,
     carGap: 10,
     carHeight: 34,
-    // Fuel burned per 100 px travelled = base + perCar * (number of cars, engine included).
+    // Fuel burned per 100 px travelled = base + perCar * (sum of car weights, engine included).
     fuelPer100Base: 0.4,
     fuelPer100PerCar: 0.2,
     engineFuelCapacity: 40,     // capacity built into the locomotive
@@ -31,12 +31,14 @@ export const CONFIG = {
       hp: 200,
       color: '#e2b84b',
       role: 'Pulls the train. If it is destroyed, the run is over.',
+      weight: 1,
     },
     turret: {
       label: 'Turret car',
       hp: 100,
       color: '#5f9de0',
       role: 'Automatically shoots enemies in range. Prioritises rushers.',
+      weight: 1,
       range: 230,
       damage: 8,
       fireInterval: 0.45,
@@ -46,8 +48,40 @@ export const CONFIG = {
       hp: 90,
       color: '#d9773b',
       role: 'Adds fuel capacity. If disabled, its capacity (and any fuel above the rest) is lost.',
+      weight: 1,
       fuelCapacity: 60,
     },
+    ram: {
+      label: 'Ram car',
+      hp: 150,
+      color: '#9a9aa6',
+      role: 'At the FRONT, takes barricade hits for a fraction of the damage. Does nothing anywhere else. Heavy.',
+      weight: 1.5,
+      ramDamageMultiplier: 0.15,
+    },
+  },
+
+  // Car order (front -> back) can be changed only while stopped.
+  reorder: {
+    secondsPerMove: 1.5,       // shunting time per swap; the train cannot move meanwhile
+  },
+
+  barricade: {
+    minRamSpeed: 20,           // slower than this and the train just stops against it
+    speedAfterRam: 0.4,        // fraction of speed kept after smashing through
+    clearWorkPerStrength: 0.2, // crew-seconds of work per point of strength to clear by hand
+    scrapPerStrength: 0.15,    // scrap yielded when cleared by hand
+  },
+
+  salvage: {
+    work: 16,                  // crew-seconds to salvage a wreck into a working car
+    reattachWork: 6,           // crew-seconds to re-attach a car you detached
+    detachedOffset: 44,        // detached cars are shoved this far off the rails
+    maxAttachDistance: 300,    // train must be stopped within this distance of a wreck to attach it
+  },
+
+  survivor: {
+    hp: 35,
   },
 
   crew: {
