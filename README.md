@@ -5,7 +5,10 @@ Design source: [`TRAIN_GAME_DESIGN.md`](TRAIN_GAME_DESIGN.md). This is **Milesto
 move/stop/fuel/combat loop on one level. It is meant to answer one question: *is the stop-vs-move
 tension fun?*
 
-## Run it
+**Play online:** https://garik-sargis.github.io/Pongobongoboy/ (redeployed automatically on every push to
+`train-prototype` or `master` by `.github/workflows/pages.yml`, after the tests pass).
+
+## Run it locally
 
 Needs Node 18+ (no dependencies to install).
 

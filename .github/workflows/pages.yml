@@ -1,0 +1,37 @@
+# Publishes the game to the gh-pages branch, which GitHub Pages serves.
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [master, train-prototype]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm test
+      - name: Build site
+        run: |
+          mkdir _site
+          cp -r index.html src _site/
+          touch _site/.nojekyll
+      - name: Publish to gh-pages
+        working-directory: _site
+        run: |
+          git init -q -b gh-pages
+          git add -A
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -q -m "Deploy ${GITHUB_SHA}"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
