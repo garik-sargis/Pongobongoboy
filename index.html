@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Train Prototype</title>
+<style>
+  :root {
+    --bg: #171712;
+    --panel: #22221c;
+    --panel-2: #2c2c25;
+    --line: #3d3c33;
+    --text: #e9e4d6;
+    --dim: #a19c8c;
+    --fuel: #f0a531;
+    --scrap: #9aa3ab;
+    --engine: #e2b84b;
+    --good: #6fd16f;
+    --warn: #e6c84a;
+    --bad: #e45a4a;
+    --select: #ffe066;
+    --crew: #3fb6a8;
+    --kit: #b49be0;
+    --font: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 13px/1.35 var(--font);
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    overflow: hidden;
+    user-select: none;
+  }
+  [hidden] { display: none !important; }
+  button {
+    font: inherit;
+    color: var(--text);
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 6px 10px;
+    cursor: pointer;
+  }
+  button:hover:not(:disabled) { border-color: var(--dim); }
+  button:disabled { opacity: 0.45; cursor: default; }
+  kbd {
+    font: 11px var(--font);
+    border: 1px solid var(--line);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 0 4px;
+    color: var(--dim);
+  }
+
+  /* --- Top bar: resources --- */
+  #top { background: var(--panel); border-bottom: 1px solid var(--line); padding: 6px 12px 6px; }
+  .stats { display: flex; gap: 20px; align-items: flex-end; flex-wrap: wrap; }
+  .stat { display: flex; flex-direction: column; gap: 3px; min-width: 80px; }
+  .stat .label { color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
+  .stat .value { font-size: 15px; font-weight: 600; }
+  .stat .sub { color: var(--dim); font-size: 11px; }
+  .stat.level .value { font-size: 14px; }
+  .meter { width: 150px; height: 10px; background: #0007; border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
+  .meter > i { display: block; height: 100%; width: 0; transition: width 0.15s linear; }
+  #fuel-bar { background: var(--fuel); }
+  #engine-bar { background: var(--engine); }
+  #threat-bar { background: var(--good); }
+  .stat.threat .meter { width: 190px; }
+  #minimap { display: block; width: 100%; height: 52px; margin-top: 6px; cursor: pointer; background: #0d0d0b; border-radius: 4px; }
+
+  /* --- Play field --- */
+  #field { position: relative; min-height: 0; }
+  #game { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; }
+  #warnings { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; pointer-events: none; flex-wrap: wrap; justify-content: center; width: 90%; }
+  .warning { background: #000b; border: 1px solid var(--bad); color: #ffd2cc; padding: 4px 10px; border-radius: 5px; font-weight: 600; white-space: nowrap; }
+  .warning.caution { border-color: var(--warn); color: #fff0c0; }
+  #messages { position: absolute; top: 46px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 4px; pointer-events: none; }
+  .message { background: #000a; padding: 3px 10px; border-radius: 4px; }
+  .message.bad { color: #ffb4aa; }
+  .message.good { color: #b8f0b8; }
+  #paused { position: absolute; bottom: 10px; right: 12px; color: var(--warn); font-weight: 600; pointer-events: none; }
+  #zoom-hint { position: absolute; bottom: 10px; left: 12px; color: var(--dim); font-size: 11px; pointer-events: none; }
+
+  /* --- Bottom bar: controls --- */
+  #bottom { background: var(--panel); border-top: 1px solid var(--line); padding: 6px 12px 8px; display: flex; flex-direction: column; gap: 6px; }
+  #bottom .row { display: flex; gap: 12px; align-items: stretch; }
+  #bottom .train-row { align-items: center; gap: 8px; }
+  .train-row .label { color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; margin-right: 4px; }
+  #consist { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  #consist::after { content: '▶ front'; color: var(--dim); font-size: 11px; margin-left: 2px; }
+  .chip { display: flex; align-items: center; gap: 6px; padding: 3px 8px; font-size: 12px; }
+  .chip.selected { border-color: var(--select); box-shadow: 0 0 0 1px var(--select) inset; }
+  .chip.dead { opacity: 0.55; text-decoration: line-through; }
+  .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; flex: none; }
+  .chip .hp { width: 30px; height: 4px; background: #0007; border-radius: 2px; overflow: hidden; }
+  .chip .hp > i { display: block; height: 100%; background: var(--good); }
+  #detach { margin-left: auto; }
+  #go {
+    min-width: 130px; font-size: 16px; font-weight: 700; letter-spacing: 0.04em;
+    background: #2f4a2a; border-color: #4d7a45;
+  }
+  #go.stop { background: #5a2a24; border-color: #8a4238; }
+  #unit-cards { display: flex; gap: 6px; flex-wrap: wrap; max-width: 46%; }
+  .unit-card { width: 128px; text-align: left; display: flex; flex-direction: column; gap: 2px; padding: 4px 8px; }
+  .unit-card.selected { border-color: var(--select); box-shadow: 0 0 0 1px var(--select) inset; }
+  .unit-card.dead { opacity: 0.4; text-decoration: line-through; }
+  .unit-card.vehicle { border-style: dashed; }
+  .unit-card .row { display: flex; justify-content: space-between; gap: 4px; }
+  .unit-card .status { color: var(--dim); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .unit-card .meter { width: 100%; height: 5px; }
+  .unit-card .meter > i { background: var(--crew); }
+  #info { flex: 1; background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; min-width: 0; }
+  #info .text { flex: 1 1 300px; min-width: 0; }
+  #info .title { font-weight: 600; }
+  #info .desc { color: var(--dim); font-size: 12px; }
+  #info .buttons { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  #info .buttons button { padding: 4px 8px; font-size: 12px; }
+  .side-buttons { display: flex; flex-direction: column; gap: 6px; }
+
+  /* --- Overlays --- */
+  .overlay { position: fixed; inset: 0; background: #000d; display: flex; align-items: center; justify-content: center; z-index: 10; padding: 16px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 22px 26px; max-width: 760px; width: 100%; max-height: calc(100vh - 32px); overflow: auto; }
+  .card.wide { max-width: 1180px; }
+  .card h1 { margin: 0 0 6px; font-size: 22px; }
+  .card h2 { margin: 16px 0 6px; font-size: 13px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.06em; }
+  .card p { margin: 6px 0; }
+  .card ul { margin: 4px 0; padding-left: 18px; }
+  .card li { margin: 2px 0; }
+  .card .actions { margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .card .primary { background: #2f4a2a; border-color: #4d7a45; font-weight: 700; padding: 8px 16px; }
+  .legend { display: inline-block; width: 10px; height: 10px; margin-right: 4px; vertical-align: -1px; }
+  #end-title.win { color: var(--good); }
+  #end-title.loss { color: var(--bad); }
+  .stats-line { color: var(--dim); }
+  .dim { color: var(--dim); }
+
+  /* Level select */
+  .levels { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-top: 12px; }
+  .level-card { text-align: left; padding: 14px; display: flex; flex-direction: column; gap: 6px; height: 100%; }
+  .level-card .name { font-size: 16px; font-weight: 700; }
+  .level-card .diff { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; }
+  .diff.Easy { color: var(--good); }
+  .diff.Medium { color: var(--warn); }
+  .diff.Hard { color: var(--bad); }
+  .level-card .facts { color: var(--dim); font-size: 12px; }
+
+  /* Depot */
+  .depot { display: grid; grid-template-columns: 1.4fr 1fr; gap: 18px; }
+  .catalog { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; }
+  .shop-item { text-align: left; display: flex; flex-direction: column; gap: 3px; padding: 8px 10px; }
+  .shop-item .top { display: flex; align-items: center; gap: 6px; font-weight: 600; }
+  .shop-item .price { margin-left: auto; color: var(--warn); }
+  .shop-item .meta { color: var(--dim); font-size: 11px; }
+  .shop-item .role { font-size: 11px; color: #cfc9b8; }
+  .train-list { display: flex; flex-direction: column; gap: 4px; }
+  .train-item { display: flex; align-items: center; gap: 8px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
+  .train-item .n { flex: 1; }
+  .train-item button { padding: 2px 7px; }
+  .summary { margin-top: 10px; display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; font-size: 12px; }
+  .summary .k { color: var(--dim); }
+  @media (max-width: 900px) { .depot { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+  <header id="top">
+    <div class="stats">
+      <div class="stat level">
+        <span class="label" id="level-diff">Level</span>
+        <span class="value" id="level-name"></span>
+      </div>
+      <div class="stat">
+        <span class="label">Fuel</span>
+        <div class="meter"><i id="fuel-bar"></i></div>
+        <span class="sub" id="fuel-text"></span>
+      </div>
+      <div class="stat">
+        <span class="label">Burn</span>
+        <span class="value" id="burn-text"></span>
+        <span class="sub" id="burn-sub"></span>
+      </div>
+      <div class="stat">
+        <span class="label">Engine</span>
+        <div class="meter"><i id="engine-bar"></i></div>
+        <span class="sub" id="engine-text"></span>
+      </div>
+      <div class="stat">
+        <span class="label">Scrap</span>
+        <span class="value" id="scrap-text"></span>
+        <span class="sub" id="kits-text"></span>
+      </div>
+      <div class="stat">
+        <span class="label">Crew</span>
+        <span class="value" id="crew-text"></span>
+        <span class="sub" id="crew-sub"></span>
+      </div>
+      <div class="stat">
+        <span class="label">To exit</span>
+        <span class="value" id="exit-text"></span>
+      </div>
+      <div class="stat threat">
+        <span class="label">Threat</span>
+        <div class="meter"><i id="threat-bar"></i></div>
+        <span class="sub" id="threat-text"></span>
+      </div>
+    </div>
+    <canvas id="minimap" title="Map — explored ground, deposits, nests, wrecks. Click to look there."></canvas>
+  </header>
+
+  <main id="field">
+    <canvas id="game"></canvas>
+    <div id="warnings"></div>
+    <div id="messages"></div>
+    <div id="paused" hidden>PAUSED (P)</div>
+    <div id="zoom-hint">Wheel: zoom · WASD/arrows: pan · F: follow train</div>
+  </main>
+
+  <footer id="bottom">
+    <div class="row train-row">
+      <span class="label">Train</span>
+      <div id="consist"></div>
+      <button id="detach" title="Drop the rear car, even while moving (X). It stays behind as a wreck you can re-attach.">Detach rear <kbd>X</kbd></button>
+    </div>
+    <div class="row">
+      <button id="go" title="Start / stop the train (Space)">GO <kbd>Space</kbd></button>
+      <div id="unit-cards"></div>
+      <div class="side-buttons">
+        <button id="recall" title="Everyone outside heads back to the train (R)">Recall all <kbd>R</kbd></button>
+        <button id="help-btn">Help <kbd>H</kbd></button>
+      </div>
+      <div id="info">
+        <div class="text">
+          <div class="title" id="info-title"></div>
+          <div class="desc" id="info-desc"></div>
+        </div>
+        <div class="buttons">
+          <button id="build-sentry" hidden title="Selected crew fetch a kit from the armoury and set up a sentry (B)">Build sentry <kbd>B</kbd></button>
+          <button id="deploy-vehicle" hidden title="A crew member aboard drives it out (V)"></button>
+          <button id="to-rear" hidden title="Swap toward the rear (Q). Only while stopped.">◀ Toward rear <kbd>Q</kbd></button>
+          <button id="to-front" hidden title="Swap toward the front (E). Only while stopped.">Toward front ▶ <kbd>E</kbd></button>
+          <button id="repair" hidden></button>
+          <button id="repair-vehicle" hidden></button>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Level select -->
+  <div class="overlay" id="menu">
+    <div class="card wide">
+      <h1>Train prototype</h1>
+      <p class="dim">Get the train through to the exit tunnel. Stop for fuel and scrap, defend your crew, reshape the train. Pick a line:</p>
+      <div class="levels" id="level-list"></div>
+      <div class="actions"><button id="menu-help">How to play</button></div>
+    </div>
+  </div>
+
+  <!-- Depot / loadout -->
+  <div class="overlay" id="depot" hidden>
+    <div class="card wide">
+      <h1 id="depot-title">Depot</h1>
+      <p class="dim" id="depot-blurb"></p>
+      <div class="depot">
+        <div>
+          <h2>Buy cars (scrap)</h2>
+          <div class="catalog" id="catalog"></div>
+        </div>
+        <div>
+          <h2>Your train (front at the top)</h2>
+          <div class="train-list" id="depot-train"></div>
+          <div class="summary" id="depot-summary"></div>
+          <div class="actions">
+            <button class="primary" id="depot-start">Start run</button>
+            <button id="depot-reset">Reset to suggested</button>
+            <button id="depot-back">Back</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay" id="help" hidden>
+    <div class="card">
+      <h1>How to play</h1>
+      <p>Get the train to the <b>EXIT</b> tunnel on the right. You lose if the <b>locomotive</b> is destroyed or <b>every crew member</b> dies.</p>
+      <p>Fuel runs out while you drive, so you have to stop. While stopped, the <b>threat</b> meter climbs and attacks get heavier; moving lets it fall. The land above and below the track is unexplored — scout it for richer deposits, wrecks and survivors, but <b>nests</b> out there wake up when you come close.</p>
+      <h2>Controls</h2>
+      <ul>
+        <li><kbd>Space</kbd>: start / stop the train</li>
+        <li><b>Click</b> a crew member or vehicle (or <kbd>1</kbd>–<kbd>6</kbd>, or its card) to select. <kbd>Shift</kbd> adds to the selection.</li>
+        <li>With units selected, <b>click</b> (left or right): ground = move · <span class="legend" style="background:var(--fuel)"></span>fuel / <span class="legend" style="background:var(--scrap)"></span>scrap = dig and <b>haul loads back to the train</b> until it's empty · wreck = salvage onto the train · barricade = tear down · survivor = rescue · your sentry = pack up · train = board / dock.</li>
+        <li><kbd>B</kbd> with crew selected: fetch a kit from the armoury car and build a sentry gun where you click.</li>
+        <li>Click a <b>car</b> (or its chip in the Train strip) to inspect it. While stopped: repair with scrap, shunt it with <kbd>Q</kbd>/<kbd>E</kbd>, or (vehicle bays) <kbd>V</kbd> to send a crew member out driving.</li>
+        <li><kbd>X</kbd> detaches the rear car, even while moving. <kbd>R</kbd> recalls everyone. <kbd>Esc</kbd> deselects.</li>
+        <li>Mouse wheel zooms · <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>/arrows pan · <kbd>F</kbd> follows the train · click the map strip to jump.</li>
+        <li><kbd>P</kbd> pause · <kbd>H</kbd> help</li>
+      </ul>
+      <h2>Enemies</h2>
+      <ul id="enemy-legend"></ul>
+      <h2>Debug</h2>
+      <p class="stats-line"><kbd>G</kbd> +fuel · <kbd>K</kbd> damage engine · <kbd>N</kbd> spawns on/off · <kbd>M</kbd> fog on/off · <kbd>T</kbd> 2× speed</p>
+      <div class="actions"><button class="primary" id="help-close">Close</button></div>
+    </div>
+  </div>
+
+  <div class="overlay" id="end" hidden>
+    <div class="card">
+      <h1 id="end-title"></h1>
+      <p id="end-reason"></p>
+      <p class="stats-line" id="end-stats"></p>
+      <div class="actions">
+        <button class="primary" id="end-next" hidden>Next line ▶</button>
+        <button id="end-retry">Retry with same train</button>
+        <button id="end-depot">Change train</button>
+        <button id="end-menu">Level select</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
