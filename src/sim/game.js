@@ -1,24 +1,35 @@
 // Simulation entry point: create a game and advance it by fixed time steps.
 
 import { createState, updateTimers, pushMessage } from './state.js';
-import { updateTrain, updateCarWeapons } from './train.js';
-import { updateCrew } from './crew.js';
-import { updateEnemies } from './enemies.js';
+import { updateTrain } from './train.js';
+import { updateUnits } from './units.js';
+import { updateCarWeapons, updateSentries, updateMines } from './weapons.js';
+import { updateCarModules } from './defense.js';
+import { updateEnemies, updateNests } from './enemies.js';
 import { updateSpawner } from './spawner.js';
+import { updateFog } from './fog.js';
 import { checkOutcome } from './rules.js';
 
-export function createGame(config, level, seed) {
-  return createState(config, level, seed);
+// opts: { seed, loadout, scrap }
+export function createGame(config, level, opts = {}) {
+  const state = createState(config, level, typeof opts === 'number' ? { seed: opts } : opts);
+  updateFog(state, 1);
+  return state;
 }
 
 export function step(state, dt) {
   if (state.outcome) return;
   state.time += dt;
   updateTrain(state, dt);
-  updateCrew(state, dt);
+  updateCarModules(state, dt);
+  updateUnits(state, dt);
   updateCarWeapons(state, dt);
+  updateSentries(state, dt);
+  updateMines(state, dt);
   updateEnemies(state, dt);
+  updateNests(state, dt);
   updateSpawner(state, dt);
+  updateFog(state, dt);
   updateTimers(state, dt);
   if (checkOutcome(state)) state.train.running = false;
 }
@@ -39,4 +50,9 @@ export function debugDamageEngine(state) {
 export function debugToggleSpawns(state) {
   state.spawnsEnabled = !state.spawnsEnabled;
   pushMessage(state, `[debug] spawns ${state.spawnsEnabled ? 'on' : 'off'}`);
+}
+
+export function debugToggleFog(state) {
+  state.fog.enabled = !state.fog.enabled;
+  pushMessage(state, `[debug] fog ${state.fog.enabled ? 'on' : 'off'}`);
 }

@@ -27,15 +27,30 @@ export function detachRear(state) {
   if (car.type === 'locomotive') return { ok: false, reason: 'Cannot detach the locomotive' };
   const r = carRect(state, cars.length - 1);
   cars.pop();
+
+  const carState = {};
+  if (car.kits != null) carState.kits = car.kits;
+  if (car.vehicleId != null) {
+    const v = state.vehicles.find((x) => x.id === car.vehicleId);
+    if (v && !v.deployed) {
+      // The vehicle stays in its bay, inside the wreck.
+      carState.vehicleHp = v.hp;
+      state.vehicles = state.vehicles.filter((x) => x !== v);
+    } else if (v) {
+      v.bayCarId = null; // out driving: it has nowhere to dock now
+    }
+  }
+  if (state.config.cars[car.type].vehicle && carState.vehicleHp === undefined) carState.vehicleHp = null;
+
   const label = state.config.cars[car.type].label;
-  makeWreck(state, car.type, r.cx, state.config.world.trackY + state.config.salvage.detachedOffset, car.hp, state.config.salvage.reattachWork);
+  makeWreck(state, car.type, r.cx, state.world.trackY + state.config.salvage.detachedOffset, car.hp, state.config.salvage.reattachWork, carState);
   pushMessage(state, `${label} detached`, 'info');
   return { ok: true, car };
 }
 
 // A salvaged/re-attached car joins at the rear.
-export function attachCar(state, type, hp) {
-  const car = makeCar(state, type, hp);
+export function attachCar(state, type, hp, carState = {}) {
+  const car = makeCar(state, type, hp, carState);
   state.train.cars.push(car);
   pushMessage(state, `${state.config.cars[type].label} attached at the rear`, 'good');
   return car;

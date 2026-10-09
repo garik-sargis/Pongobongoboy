@@ -1,6 +1,6 @@
 // Win / loss conditions.
 
-import { aliveCrew } from './crew.js';
+import { aliveCrew } from './units.js';
 
 export function checkOutcome(state) {
   if (state.outcome) return state.outcome;
@@ -12,7 +12,7 @@ export function checkOutcome(state) {
   if (alive.length === 0) {
     return (state.outcome = { result: 'loss', reason: 'Every crew member died.' });
   }
-  if (state.train.head >= state.level.exitX) {
+  if (state.train.head >= state.world.length) {
     const aboard = alive.filter((c) => c.aboard);
     if (aboard.length === 0) {
       return (state.outcome = { result: 'loss', reason: 'The train reached the tunnel with no crew aboard.' });

@@ -1,8 +1,9 @@
 // Threat and spawning.
 // Threat (0..max) is the single, visible measure of danger:
 //  - while the train is exposed (stopped or crawling), it rises after a short grace period;
-//  - while moving, it decays back toward a low baseline.
-// Spawn interval, group size and rusher share all scale with threat.
+//  - while moving, it decays back toward the level's baseline.
+// Spawn interval, group size and which enemy types can appear all scale with threat.
+// Enemies appear out in the fog, a few hundred px from the train, and walk in.
 
 import { isExposed, trainTail } from './train.js';
 import { spawnEnemy } from './enemies.js';
@@ -14,7 +15,7 @@ export function threatFraction(state) {
 export function spawnInterval(state) {
   const s = state.config.spawner;
   const f = threatFraction(state);
-  return s.intervalAtZero + (s.intervalAtMax - s.intervalAtZero) * f;
+  return (s.intervalAtZero + (s.intervalAtMax - s.intervalAtZero) * f) * state.threatCfg.intervalMult;
 }
 
 // -1 easing, 0 steady, +1 rising
@@ -24,20 +25,19 @@ export function threatTrend(state) {
   if (isExposed(state)) {
     return state.stoppedTime > s.stopGrace && state.threat < s.maxThreat ? 1 : 0;
   }
-  return state.threat > s.baselineThreat ? -1 : 0;
+  return state.threat > state.threatCfg.baseline ? -1 : 0;
 }
 
 export function updateThreat(state, dt) {
   const s = state.config.spawner;
+  const baseline = state.threatCfg.baseline;
   if (!state.started) return;
   if (isExposed(state)) {
     state.stoppedTime += dt;
-    if (state.stoppedTime > s.stopGrace) state.threat += s.risePerSecStopped * dt;
+    if (state.stoppedTime > s.stopGrace) state.threat += s.risePerSecStopped * state.threatCfg.riseMult * dt;
   } else {
     state.stoppedTime = 0;
-    if (state.threat > s.baselineThreat) {
-      state.threat = Math.max(s.baselineThreat, state.threat - s.decayPerSecMoving * dt);
-    }
+    if (state.threat > baseline) state.threat = Math.max(baseline, state.threat - s.decayPerSecMoving * dt);
   }
   state.threat = Math.min(s.maxThreat, state.threat);
 }
@@ -46,7 +46,7 @@ export function updateSpawner(state, dt) {
   updateThreat(state, dt);
   const s = state.config.spawner;
   if (!state.started || !state.spawnsEnabled) return;
-  if (state.train.head > state.level.exitX - s.noSpawnNearExit) return;
+  if (state.train.head > state.world.length - s.noSpawnNearExit) return;
 
   state.spawnTimer -= dt;
   if (state.spawnTimer > 0) return;
@@ -54,33 +54,56 @@ export function updateSpawner(state, dt) {
   state.spawnTimer = spawnInterval(state) * (0.75 + state.rng() * 0.5);
 }
 
-export function spawnGroup(state) {
+function defaultTable() {
+  return [
+    { type: 'shooter', weight: 5, minThreat: 0, group: [1, 2] },
+    { type: 'rusher', weight: 2, minThreat: 0, group: [1, 1] },
+  ];
+}
+
+function pickEntry(state) {
+  const table = (state.level.enemyTable ?? defaultTable()).filter((e) => e.minThreat <= state.threat);
+  const total = table.reduce((n, e) => n + e.weight, 0);
+  let r = state.rng() * total;
+  for (const e of table) {
+    r -= e.weight;
+    if (r <= 0) return e;
+  }
+  return table[0];
+}
+
+export function spawnGroup(state, entry = pickEntry(state)) {
   const s = state.config.spawner;
   const rng = state.rng;
-  const H = state.config.world.height;
-  const f = threatFraction(state);
-  const size = 1 + Math.floor(state.threat / s.groupSizeStep);
-  const rusherChance = s.rusherChanceMin + (s.rusherChanceMax - s.rusherChanceMin) * f;
+  const H = state.world.height;
+  const trackY = state.world.trackY;
   const head = state.train.head;
   const tail = trainTail(state);
   const exposed = isExposed(state);
-  const fromTop = rng() < 0.5;
+  const type = entry.type;
 
+  const [gMin, gMax] = entry.group ?? [1, 1];
+  let size = gMin + Math.floor(rng() * (gMax - gMin + 1));
+  if (gMax <= 2) size += Math.floor(state.threat / s.groupSizeStep); // pack enemies already come in numbers
+
+  // One anchor per group, members scattered around it.
+  const side = rng() < 0.5 ? -1 : 1;
+  const [dMin, dMax] = s.spawnDistance;
+  const far = type === 'mortar' || type === 'sniper' ? 120 : 0;
+  let x;
+  let y = trackY + side * (dMin + far + rng() * (dMax - dMin));
+  if (exposed) {
+    x = tail - 300 + rng() * (head - tail + 600);
+  } else if (type === 'rusher' || type === 'swarmer') {
+    // Fast enemies chase a moving train from behind.
+    x = tail - 350 - rng() * 250;
+    y = trackY + side * (100 + rng() * 300);
+  } else {
+    // Slow ones wait ahead: a moving train drives past them.
+    x = head + 300 + rng() * 500;
+  }
+  y = Math.max(20, Math.min(H - 20, y));
   for (let i = 0; i < size; i++) {
-    const type = rng() < rusherChance ? 'rusher' : 'shooter';
-    let x;
-    let y = fromTop ? 0 : H;
-    if (exposed) {
-      // Anywhere around the stopped train.
-      x = tail - 400 + rng() * (head - tail + 800);
-    } else if (type === 'rusher') {
-      // Rushers chase a moving train from behind.
-      x = tail - 300 - rng() * 200;
-      y = 40 + rng() * (H - 80);
-    } else {
-      // Shooters wait ahead; a moving train drives past them.
-      x = head + 150 + rng() * 450;
-    }
-    spawnEnemy(state, type, x + (rng() - 0.5) * 40, y);
+    spawnEnemy(state, type, x + (rng() - 0.5) * 60, Math.max(10, Math.min(H - 10, y + (rng() - 0.5) * 60)));
   }
 }

@@ -1,78 +1,110 @@
-# Assumptions & defaults (Milestones 1–2)
+# Assumptions & defaults
 
-Everything here is a placeholder chosen to make the prototype playable. None of it is a design
-decision; change freely. Numbers live in `src/config.js`.
+Everything here is a placeholder chosen to make the prototype playable. None of it is a final design
+decision; change freely. Numbers live in `src/config.js` and `src/data/`.
 
-## Confirmed by the designers for this milestone
+## Confirmed by the designers
 
 | Topic | Choice |
 |---|---|
 | Platform | Desktop browser, mouse + keyboard. |
-| Crew outside when the train departs (§14 / UX) | The train **leaves them behind**. They are slower than the train and can only re-board if it stops (or crawls) close enough. A warning shows while crew are outside a moving train. |
-| Fuel softlock (§14 Q7) | At 0 fuel the train **crawls** at 15% speed. Crawling counts as "stopped" for threat, so it's survivable but punishing. |
-| Crew working under fire (§14 Q6) | Workers **pause gathering while an enemy is in range** and shoot back (`crew.pauseGatherWhenFighting`). |
+| Crew outside when the train departs | The train **leaves them behind**. A warning shows while units are outside a moving train. |
+| Fuel softlock (§14 Q7) | At 0 fuel the train **crawls** at 15% speed. Crawling counts as "stopped" for threat. |
+| Crew working under fire (§14 Q6) | Workers **pause digging/work while an enemy is in range** and shoot back (`crew.pauseGatherWhenFighting`). |
+| Resource gathering | **Physically hauled**: dig a load, carry it to the train, come back (asked for in Milestone 3). |
+| Scope of Milestone 3 | Multiple weapon / defence / utility cars, vehicles, deployables, more enemies, two more levels, a taller map that rewards exploring. Implementer to decide the details (below). |
 
-## Milestone 2 defaults picked by the implementer
+## Milestone 3 decisions (made by the implementer, as asked)
 
-These answer open questions in the design doc only provisionally. Each one is a config value in `src/config.js`.
+**Map and exploration**
+- Levels are **1400 units tall** (was 600). The track runs through the middle. The camera can now pan vertically and **zoom** (mouse wheel).
+- **Fog of war:** unexplored ground is black. Explored ground you aren't currently watching is dimmed, and enemies there are hidden. The train, crew, vehicles and sentries reveal around themselves. The **railway and barricades are always visible**, so you can still plan ahead along the line (§14 Q9).
+- Deposits are **generated per zone** from a seed (deterministic). Deposits further from the track are richer. Placement is biased toward the track, so roughly half are within reach of the crane.
+- **Nests** (local activation, §8 / §14 Q4) sit 380–700 units from the track, each guarding a rich pile:
+  - They wake when a unit or sentry comes within 420, when the train stops within 520, or when one is shot.
+  - While awake they spawn their zone's enemy types (max 6 alive at once). Those defenders are **leashed**: they won't chase targets more than 750 from the nest.
+  - A nest goes dormant after 20 s with nobody near.
+  - Destroying one leaves a 50-scrap pile.
+- Global threat escalation still runs alongside, and each level scales it (`threat.baseline / riseMult / intervalMult`). Enemies spawn 520–720 from the train, out in the fog, and walk in.
 
-| Topic | Default |
-|---|---|
-| Reconfiguration cost (§14 Q3) | Stopped-only. Each one-step swap is instant but costs **1.5 s of shunting**, during which the train can't move. No crew or scrap cost. Moving a car from rear to front of a 4-car train = 4.5 s. |
-| Obstruction rule (§14 Q2) | Any front car can ram any barricade and takes `strength` damage. A **ram car at the front** takes 15% of it. Below 20 px/s (e.g. crawling on empty) the train is blocked and must clear by hand. No "reinforced barricade needs a ram" rule yet; the second barricade is just stronger (140 vs 70). |
-| Clearing by hand | Crew work on it like a deposit: `0.2 crew-seconds per strength` (70 → 14 crew-seconds), yields `0.15 scrap per strength`. Paused while that crew member is fighting. |
-| Salvage (§14 Q8) | 16 crew-seconds of work, no scrap, no crane. Only progresses while the train is **stopped within 300 px** of the wreck. The car joins at the **rear**, at the wreck's HP (50–60%). |
-| Detach | Rear car only, allowed while moving. Locomotive can't be detached. The car is left as a wreck beside the track (keeps its HP); re-attaching takes 6 crew-seconds. |
-| Ram car | 150 HP, weight 1.5 (adds 0.3 fuel per 100 m), active only at the front. A disabled ram car (0 HP) gives no protection. |
-| Survivor | Walks to the train after rescue, joins with 35 HP. No cost. |
-| Middle car destroyed (§14 Q5) | Unchanged: disabled, stays attached. No splitting. |
+**Hauling**
+- Crew carry **12** per trip and dig 3/s. The excavator carries **40** and digs 7/s. The tank can't dig.
+- A full load, or an emptied deposit, sends the unit back to the nearest car to unload, and then back to the deposit until it's empty.
+- Boarding or docking unloads whatever is carried. A unit dies → its load is lost.
+- If the fuel tanks are full, the hauler waits at the train holding the leftover load.
+- Barricades cleared by hand and destroyed nests now leave **scrap piles to haul**, not instant scrap.
+- The **crane car** is the exception: it lifts straight into the train, but only from deposits within 210 of that car, and only while stopped.
 
-## Milestone 1 defaults picked by the implementer
+**Depot (between-level purchase, §9)**
+- Each level has a **scrap budget**. You buy cars (max 8 including the locomotive) and order them. **Unspent budget becomes your starting scrap.**
+- A suggested loadout is pre-filled. New purchases are added at the rear, but in front of a rear mine layer.
 
-**Presentation**
-- Top-down 2D gray-box. Track runs horizontally through a 600-unit-tall band; enemies come from the top/bottom edges and from behind.
-- Camera follows the train with the front at 55% of the screen; player can pan freely. A route bar shows all deposits for the whole level (full information ahead, §14 Q9).
+**Cars**
+- Weapons:
+  - Gun turret: 8 dmg / 0.45 s, range 240.
+  - Cannon: 40 splash dmg / 2.2 s, range 90–380, ignores armour.
+  - Flamer: 26 dps to every enemy within 130.
+- Armour car: 300 HP, weight 2. The cars directly in front of and behind it take 35% less damage.
+- Shield car: a 175-radius bubble with a 120-point pool that absorbs damage to anything inside (cars, crew, sentries). It recharges 14/s after 3 s without hits.
+- Mine layer: works **only as the rear car**. Drops a mine every 150 px travelled (max 10). Mines blow up on contact for 50 splash damage.
+- Workshop: while stopped, repairs itself or a neighbour at 6 HP/s, costing 1 scrap per 5 HP.
+- Armoury: 2 sentry kits.
+  - Press `B` with crew selected. The crew fetch a kit (from any car of the train), carry it out and take 2 s to build.
+  - Sentry: 90 HP; gun 7 dmg / 0.4 s, range 200.
+  - Crew can pack one up again (2 s) and carry the kit back. If you leave it behind, it's lost.
+- Vehicle bays: deploy only while stopped. A crew member aboard becomes the driver; dock by ordering the vehicle onto the train.
+  - If the vehicle is destroyed, its driver bails out alive.
+  - If its bay is detached while the vehicle is out, it can't dock and is abandoned.
+  - Docked vehicles are repaired from the bay's info panel.
+  - Tank: 220 HP, armour 3, speed 64 (faster than the train), splash gun.
+  - Excavator: 170 HP, speed 46.
+- A disabled car (0 HP) loses its function, as before.
 
-**Train**
-- Starting order front → back: locomotive, turret, fuel tank.
-- Fuel is burned per distance travelled, not per second, so a stopped train burns nothing. Burn per 100 px = `0.4 + 0.2 × total car weight`.
-- Every car has HP. A non-engine car at 0 HP is **disabled**: stays attached, stops working (turret stops firing; fuel tank's capacity is lost, and fuel above the remaining capacity spills). Repairing above 0 restores it. No splitting (§14 Q5 still open).
-- Repair: select a car, spend 10 scrap for +25 HP. Instant, only while stopped, no crew required.
+**Barricades**
+- Reinforced barricades **can only be broken by a ram car at the front**. Anything else hits it once for 20 damage and stops dead. You can also dig one out by hand: the excavator does it 4× faster.
+- **Changed:** a train with fuel can now ram a normal barricade **from a standstill**. Previously you could get stuck if you stopped right in front of one. Only a train crawling on an empty tank is too weak to break through.
 
-**Crew**
-- Crew aboard are safe and do not fight. Only the turret defends a moving train.
-- Crew can only leave the train while it is stopped; they step off on the side facing their destination.
-- Gathered fuel/scrap goes straight into stock (no carrying back to the train).
-- Rescued survivors and salvaged cars are permanent for the run.
-- Fuel gathering stops when tanks are full.
+**Enemies**
 
-**Threat & spawning** (§14 Q4: time-based only for now; no noise/local activation yet)
-- Nothing spawns until the train first departs (so the player can read the help and plan).
-- Threat drifts to a low baseline while moving; while stopped or crawling it rises after a 3 s grace.
-- Spawn interval, group size and rusher chance all scale with threat.
-- Moving: shooters spawn ahead (the train drives past them), rushers come from behind and can catch up.
-- Stopped: enemies come from the top/bottom edges anywhere around the train.
-- Enemies target whatever is nearest: crew outside or any car with HP left.
-- No spawns in the last 400 px before the exit.
+| Enemy | HP | Behaviour |
+|---|---|---|
+| Shooter | 30 | Ranged 130. |
+| Rusher | 16 | Speed 115, explodes for 30. |
+| Swarmer | 7 | Packs of 5–8, melee 2 dmg / 0.6 s. |
+| Brute | 170 | Armour 4, slow, melee 22. Prefers cars. |
+| Sniper | 24 | Range 340. Visible 1.6 s aim, then 22 damage. Prefers crew and vehicles. |
+| Mortar | 40 | Range 160–480. Shell flies 1.7 s to a marked spot: 28 damage in radius 55. |
 
-**Win / loss**
-- Win when the front of the train reaches the tunnel with at least one living crew member **aboard**. Crew left outside are reported as left behind.
-- Arriving with nobody aboard is a loss.
+- Armour is a flat reduction per hit. Cannon shells, flames, mines and explosions ignore it.
 
-## Tuning notes from headless checks
+**Unchanged from Milestones 1–2** (still provisional):
+- Reorder: stopped-only, 1.5 s of shunting per swap.
+- Salvage: 16 crew-seconds, train stopped within 300.
+- Detach: rear car only, works while moving.
+- Survivors: rescuing one adds a crew member.
+- Middle-car destruction: the car is disabled, the train doesn't split.
+- Repair: 10 scrap for +25 HP, while stopped.
 
-**Milestone 2** (`scripts/botrun.js`):
-- Ignoring the ram car and ramming both barricades with the locomotive (210 damage total) still wins, because scrap repairs cover it. If ramming with the locomotive should hurt more, raise barricade strength or the repair cost.
-- Carrying the ram car raises fuel burn from 1.0 to 1.3 per 10 m. A bot that only uses trackside deposits then runs dry about 430 m before the exit and dies. With the ram car you need the big off-track fuel deposit, or you need to drop the ram car after the first barricade. This is the intended "extra cars cost fuel" tension. It may be too sharp; `cars.ram.weight` is the knob.
-- With far deposits allowed, both strategies win every seed (~4.5–5 min, locomotive 85–95%).
+## Balance notes (headless bot, `scripts/botrun.js`)
 
-**Milestone 1:**
+The bot only hauls with crew, repairs, digs out reinforced barricades and plans fuel ahead. It never builds sentries, drives vehicles, explores far or fights deliberately. A human player has far more tools.
 
-- A naive bot that stops at every near-track deposit and leaves when threat hits 60 wins in about 4 minutes, with the locomotive at 80–95% HP. This is probably too easy for a careful player; tune after the first human playtests.
-- Camping in one spot is safe for about 30 s and becomes fatal at about 55–60 s.
-- Driving straight through on starting fuel gets about 450 m of the 1160 m route (enforced by a test).
+| Level | Bot result | Notes |
+|---|---|---|
+| Green Valley | 4/4 wins, ~4 min | All crew survive. Ramming both barricades with the locomotive costs ~190 HP, which is the ram-car decision showing up. |
+| Ash Flats | 4/4 wins, ~6 min | Often loses a crew member. Needs topping up before the barren middle. |
+| Hive Line | 1/4 wins (another reached 99%) | Crew deaths and rear-car losses are the main failures. This is meant to require sentries, vehicles or a smarter train. |
+
+Tuning changes made during balancing:
+- Fuel deposits got bigger and more numerous.
+- Swarmers do less damage (one pack used to delete a 90 HP car in 2 s).
+- Hive Line's suggested train got a rear turret, and its budget rose to 260 to pay for it.
+- Hive Line's escalation was softened slightly.
 
 ## Still open
-
-- Answered only provisionally above (please confirm or change): reconfiguration cost (§14 Q3), obstruction rule (Q2), salvage rules (Q8).
-- Not touched yet: damage consequences beyond "disabled" (Q5), noise / local activation for threat (Q4), campaign structure (Q10), theme (Q11).
+- **Reorder, ram and salvage rules** (§14 Q2, Q3, Q8) are still only provisional.
+- **Nest behaviour is a first guess** at how local activation and global escalation combine (Q4).
+- **Not touched yet:**
+  - damage consequences beyond "disabled" (Q5)
+  - campaign structure and carrying the train between levels (Q10); levels are standalone, each with its own depot
+  - theme (Q11)
