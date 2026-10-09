@@ -36,7 +36,7 @@ These answer open questions in the design doc only provisionally. Each one is a 
 **Train**
 - Starting order front → back: locomotive, turret, fuel tank.
 - Fuel is burned per distance travelled, not per second, so a stopped train burns nothing. Burn per 100 px = `0.4 + 0.2 × total car weight`.
-- Every car has HP. A non-engine car at 0 HP is **disabled**: stays attached, stops working (turret stops firing; fuel tank's capacity is lost, and fuel above the remaining capacity spills). Repairing above 0 restores it. No splitting/detaching (§14 Q5 still open).
+- Every car has HP. A non-engine car at 0 HP is **disabled**: stays attached, stops working (turret stops firing; fuel tank's capacity is lost, and fuel above the remaining capacity spills). Repairing above 0 restores it. No splitting (§14 Q5 still open).
 - Repair: select a car, spend 10 scrap for +25 HP. Instant, only while stopped, no crew required.
 
 **Crew**
@@ -63,7 +63,7 @@ These answer open questions in the design doc only provisionally. Each one is a 
 
 **Milestone 2** (`scripts/botrun.js`):
 - Ignoring the ram car and ramming both barricades with the locomotive (210 damage total) still wins, because scrap repairs cover it. If ramming with the locomotive should hurt more, raise barricade strength or the repair cost.
-- Carrying the ram car raises fuel burn from 1.0 to 1.3 per 10 m. A bot that only uses trackside deposits then runs dry around 770 m and dies. With the ram car you need the big off-track fuel deposit, or you need to drop the ram car after the first barricade. This is the intended "extra cars cost fuel" tension. It may be too sharp; `cars.ram.weight` is the knob.
+- Carrying the ram car raises fuel burn from 1.0 to 1.3 per 10 m. A bot that only uses trackside deposits then runs dry about 430 m before the exit and dies. With the ram car you need the big off-track fuel deposit, or you need to drop the ram car after the first barricade. This is the intended "extra cars cost fuel" tension. It may be too sharp; `cars.ram.weight` is the knob.
 - With far deposits allowed, both strategies win every seed (~4.5–5 min, locomotive 85–95%).
 
 **Milestone 1:**
@@ -72,6 +72,7 @@ These answer open questions in the design doc only provisionally. Each one is a 
 - Camping in one spot is safe for about 30 s and becomes fatal at about 55–60 s.
 - Driving straight through on starting fuel gets about 450 m of the 1160 m route (enforced by a test).
 
-## Open questions this milestone did not need to answer
+## Still open
 
-Reconfiguration cost (§14 Q3), barricade/ram rules (Q2), salvage rules (Q8), campaign structure (Q10), theme (Q11).
+- Answered only provisionally above (please confirm or change): reconfiguration cost (§14 Q3), obstruction rule (Q2), salvage rules (Q8).
+- Not touched yet: damage consequences beyond "disabled" (Q5), noise / local activation for threat (Q4), campaign structure (Q10), theme (Q11).
